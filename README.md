@@ -2,16 +2,16 @@
 Rust utility that load balances multiple https://ollama.com/ servers
 
 ## Purpose
-Hardware for an Ollama server is expensive. This load balancer allows to distribute a limited number of Ollama servers optimally to multiple developers on a local network.
+Hardware for an Ollama server is expensive. This load balancer allows to distribute a limited number of Ollama servers optimally to multiple users on a local network.
 
-Let's say you have 60 developers using this service and 6 Ollama servers. What's the probability that 10% of more of your workforce is prompting the LLM at the same time?
+Let's say you have 60 users using this service and 6 Ollama servers. What's the probability that 10% of more of your users are prompting the LLM at the same time?
 
 ## Principal
-All developers on the network configure their `continue.dev` (VS Code extension) to point to the IP address of this load balancer instead of manually choosing a specific Ollama server.
+All users on the network configure their `continue.dev` (VS Code extension) to point to the IP address of this load balancer instead of manually choosing a specific Ollama server.
 
-Any HTTP POST request for an LLM completion from a developer triggers our app to make an HTTP POST request on behalf of the developer, while streaming the response back to the developer.
+Any HTTP POST request for an LLM completion from a user triggers our app to make an identical HTTP POST request to a real Ollama server on bahalf of the user. All while streaming the response back to the user.
 
-We only choose servers that are currently available, we can know which Ollama servers are available based on the assumption that developers only access the Ollama servers via this load balancer.
+We only choose servers that are currently available, we can know which Ollama servers are available based on the assumption that users only access the Ollama servers via this load balancer.
 
 ## Supported Usages
 We support not only `continue.dev` but also any client that streams responses from an Ollama server such as https://openwebui.com/
