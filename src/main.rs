@@ -8,6 +8,9 @@ use std::sync::{
 };
 use tokio::sync::RwLock;
 use futures_util::stream::StreamExt;
+use futures_util::Stream;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
 struct OllamaServer {
@@ -106,12 +109,10 @@ async fn handle_request(
 
     if let Some(server) = server {
         println!("Chose server: {}", server.address);
-        // Ensure availability is reset when the request handling is complete
+        // As long as guard object is alive, the server will be marked as "in use"
         let _guard = ServerGuard {
             server: server.clone(),
         };
-        // TODO: This _guard seems to go out of scope too soon.
-        // This causes multiple requests to be pushed towards the first server.
 
         // Build the request to the Ollama server
         let uri = format!("{}{}", server.address, path);
@@ -145,13 +146,15 @@ async fn handle_request(
                     resp_builder = resp_builder.header(key, value.clone());
                 }
 
-                // Get the response body as a stream
-                let resp_body = response.bytes_stream().map(|result| match result {
-                    Ok(bytes) => Ok(bytes),
-                    Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
-                });
+                // Wrap the response body stream with our custom stream.
+                // The purpose of our custom stream as opposed to directly using response.bytes_stream()
+                // is so we can keep track of the stream lifetime- to mark the server as available once again.
+                let resp_body = ResponseBodyWithGuard {
+                    stream: response.bytes_stream(),
+                    _guard,
+                };
 
-                // Convert reqwest::stream::BytesStream to hyper::Body
+                // Convert our custom stream to hyper::Body
                 let hyper_body = Body::wrap_stream(resp_body);
 
                 let response = resp_builder.body(hyper_body).unwrap();
@@ -206,5 +209,31 @@ struct ServerGuard {
 impl Drop for ServerGuard {
     fn drop(&mut self) {
         self.server.available.store(true, Ordering::SeqCst);
+    }
+}
+
+// Custom stream that holds the guard
+struct ResponseBodyWithGuard<S> {
+    stream: S,
+    _guard: ServerGuard,
+}
+
+impl<S> Stream for ResponseBodyWithGuard<S>
+where
+    S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
+{
+    type Item = Result<bytes::Bytes, std::io::Error>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        let stream = Pin::new(&mut self.stream);
+        match stream.poll_next(cx) {
+            Poll::Ready(Some(Ok(bytes))) => Poll::Ready(Some(Ok(bytes))),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(std::io::Error::new(std::io::ErrorKind::Other, e)))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
