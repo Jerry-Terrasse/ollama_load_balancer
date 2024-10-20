@@ -38,7 +38,7 @@ async fn main() {
         }),
         // Add more servers as needed
     ];
-    println!("Ollama servers list:");
+    println!("📒 Ollama servers list:");
     for (index, server) in servers.iter().enumerate() {
         println!("{}. {}", index + 1, server.address);
     }
@@ -64,7 +64,7 @@ async fn main() {
     // Implement graceful shutdown
     let graceful = server.with_graceful_shutdown(shutdown_signal());
 
-    println!("Ollama Load Balancer listening on http://{}", addr);
+    println!("👂 Ollama Load Balancer listening on http://{}", addr);
 
     if let Err(e) = graceful.await {
         eprintln!("Server error: {}", e);
@@ -102,7 +102,7 @@ async fn handle_request(
     let server = select_available_server(&servers).await;
 
     if let Some(server) = server {
-        println!("Chose server: {} to serve client {} POST {}", server.address, remote_addr, path);
+        println!("🤖 Chose server: {} to serve client {} POST {}", server.address, remote_addr, path);
         // As long as guard object is alive, the server will be marked as "in use"
         let _guard = ServerGuard {
             server: server.clone(),
@@ -156,6 +156,11 @@ async fn handle_request(
                 Ok(response)
             }
             Err(e) => {
+                println!("📛 Server: {} is bad: {}", server.address, e);
+                // TODO: This presumably means that somebody turned off this Ollama server.
+                // Add functionality to ignore the existence of this server for a certain amount
+                // of time.
+
                 // Return an error to the client
                 let response = Response::builder()
                     .status(StatusCode::BAD_GATEWAY)
@@ -165,7 +170,7 @@ async fn handle_request(
             }
         }
     } else {
-        println!("No available servers to serve client {} POST {}", remote_addr, path);
+        println!("🤷 No available servers to serve client {} POST {}", remote_addr, path);
         let response = Response::builder()
             .status(StatusCode::SERVICE_UNAVAILABLE)
             .body(Body::from("No available servers"))
@@ -202,7 +207,7 @@ struct ServerGuard {
 
 impl Drop for ServerGuard {
     fn drop(&mut self) {
-        println!("Server {} now available", self.server.address);
+        println!("🟢 Server {} now available", self.server.address);
         self.server.available.store(true, Ordering::SeqCst);
     }
 }
