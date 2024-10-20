@@ -91,24 +91,11 @@ async fn handle_request(
     // Get the path
     let path = req.uri().path();
 
-    // Check if the path matches /api/chat or /api/generate
-    if path != "/api/chat" && path != "/api/generate" {
-        return Ok(Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::from("Not Found"))
-            .unwrap());
-    }
-
-    // Print the complete contents of servers before selecting one
-    {
-        let servers_read = servers.read().await;
-        println!("Available servers: {:?}", servers_read);
-    }
     // Select an available server
     let server = select_available_server(&servers).await;
 
     if let Some(server) = server {
-        println!("Chose server: {}", server.address);
+        println!("Chose server: {} to serve client {} POST {}", server.address, req.uri().host().unwrap_or("UNKNOWN"), path);
         // As long as guard object is alive, the server will be marked as "in use"
         let _guard = ServerGuard {
             server: server.clone(),
@@ -171,7 +158,7 @@ async fn handle_request(
             }
         }
     } else {
-        // No available servers
+        println!("No available servers to serve client {} POST {}", req.uri().host().unwrap_or("UNKNOWN"), path);
         let response = Response::builder()
             .status(StatusCode::SERVICE_UNAVAILABLE)
             .body(Body::from("No available servers"))
@@ -208,6 +195,7 @@ struct ServerGuard {
 
 impl Drop for ServerGuard {
     fn drop(&mut self) {
+        println!("Server {} now available", self.server.address);
         self.server.available.store(true, Ordering::SeqCst);
     }
 }
