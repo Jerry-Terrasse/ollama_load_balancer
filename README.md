@@ -18,6 +18,38 @@ We support not only `continue.dev` but also any client that streams responses fr
 
 We support both `/api/chat` and `/api/generate` (CTRL+i in `continue.dev`), and actually we support any POST request that is based on streaming with `Transfer-Encoding: chunked` and `Content-Type: application/x-ndjson`.
 
+## Usage
+1. Install Rust using Rustup
+
+2. Clone this repo's master branch
+
+3. Adjust `let servers = vec!` section in the code
+
+4. `cargo run`
+
+Example output:
+```txt
+PS C:\Users\user\Downloads\ollama_load_balancer> cargo run 
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running `target\debug\ollama_load_balancer.exe`
+📒 Ollama servers list:
+1. http://192.168.150.134:11434
+2. http://192.168.150.135:11434
+3. http://192.168.150.136:11434
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+🤖 Chose server: http://192.168.150.134:11434 to serve client 127.0.0.1:54775 POST /api/chat
+🤖 Chose server: http://192.168.150.135:11434 to serve client 127.0.0.1:54777 POST /api/chat
+🤖 Chose server: http://192.168.150.136:11434 to serve client 127.0.0.1:54779 POST /api/chat
+🤷 No available servers to serve client 127.0.0.1:54781 POST /api/chat
+🟢 Server http://192.168.150.134:11434 now available
+🟢 Server http://192.168.150.136:11434 now available
+📛 Server: http://192.168.150.135:11434 is bad: error sending request for url (http://192.168.150.135:11434/api/chat): error trying to connect: tcp connect error: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond. (os error 10060)
+🟢 Server http://192.168.150.135:11434 now available
+Received CTRL+C, shutting down gracefully...
+PS C:\Users\user\Downloads\ollama_load_balancer>
+```
+
 ## Streaming
 
 The LLM doesn't have the complete response immediately which is why Ollama streams the completions.
