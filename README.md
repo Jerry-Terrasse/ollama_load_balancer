@@ -26,40 +26,68 @@ Streaming is implemented using `Newline Delimited JSON format` (ndjson). See `Co
 
 Each line of the ndjson format is mapped to one object in a JSON array.
 
+## Dependencies
+These are the versions I used:
+
+- cargo 1.82.0 (8f40fc59f 2024-08-21) on `Windows 11 Pro 23H2`
+
+- Ollama version 0.3.13 on `Windows 10 Pro 22H2`
+
+- VS Code version 1.90.2 on `Windows 11 Pro 23H2`
+
+- `Continue - Codestral, Claude, and more` VS Code extension by `Continue` version 0.8.46 - 2024-08-11
+
+- `rust-analyzer` v0.3.2146 by `The Rust Programming Language`
+
+## Lab testing
+1. Use a Windows host with at least 64 gigabytes of RAM and at least 8 CPU cores so that you can run [three virtual machines at the same time](./doc/screenshots/virtual_machines_running_ollama.png).
+
+2. While the virtual machines are connected to the internet, install Ollama and run `ollama pull deepseek-coder:1.3b-instruct-q4_0`. Then kill Ollama from the Windows tray by right-clicking the tray icon. We choose this specific model because it has acceptable performance in CPU mode, and doesn't use much VRAM.
+
+3. Set each virtual machine to be connected with a [host only network adapter](./doc/screenshots/virtual_machine_settings_host_only_network_adapter.png) so that the host (running the load balancer) has access to three Ollama servers on the local network. Now the VMs don't have world wide web internet access anymore.
+
+4. Instead of running `ollama serve`, use [this batch file](https://github.com/BigBIueWhale/assistant_coder/blob/3cfa95ed35605e1d07fea4f8c479729eb0bfb9c9/run_ollama.bat) in each virtual machine so that Ollama runs on all network interfaces (`0.0.0.0`) instead of localhost.
+
+5. [Find out the IP addresses](./doc/screenshots/virtual_machines_ip_addresses.png) of the virtual machines that VMWare decided to assign.\
+**Adjust the server configuration** to point to the correct IP addresses of your Ollama servers.
+
+6. Configure `continue.dev` (VS Code extension) to access the Ollama server at: `http://127.0.0.1:11434/` because in lab testing we're running the load balancer on the host- the same device running VS Code.
+
+    The `continue.dev` VS Code extension config.json:
+    ```json
+    {
+      "models": [
+        {
+          "title": "DeepSeek Coder",
+          "provider": "ollama",
+          "apiBase": "http://127.0.0.1:11434/",
+          "model": "deepseek-coder:1.3b-instruct-q4_0",
+          "contextLength": 4096
+        }
+      ],
+      "tabAutocompleteOptions": {
+        "disable": true
+      },
+      "completionOptions": {
+        "maxTokens": 2048
+      },
+      "allowAnonymousTelemetry": false,
+      "docs": []
+    }
+    ```
+7. Open multiple instances of VS Code to prompt the LLM concurrently and test-out the load balancer.
+
 ## Research
 
 I set up an Ollama server running on my local network.
 
-I then configured `continue.dev` (VS Code extension) to access the Ollama server at: http://192.168.150.134:11434/
-
-The `continue.dev` VS Code extension config.json:
-```json
-{
-  "models": [
-    {
-      "title": "DeepSeek Coder",
-      "provider": "ollama",
-      "apiBase": "http://192.168.150.134:11434/",
-      "model": "deepseek-coder:1.3b-instruct-q4_0",
-      "contextLength": 4096
-    }
-  ],
-  "tabAutocompleteOptions": {
-    "disable": true
-  },
-  "completionOptions": {
-    "maxTokens": 2048
-  },
-  "allowAnonymousTelemetry": false,
-  "docs": []
-}
-```
+I then set up Continue.dev to access that Ollama server.
 
 `continue.dev` has a chat like ChatGPT.
 
 I recorded that there is no network traffic between my PC running VS Code and the Ollama server, until I press ENTER in the chat in VS Code- to start streaming a response.
 
-In wireshark I see the request structure.
+In wireshark I saw the request structure.
 
 First the TCP connection is created: [SYN] to 192.168.150.134:11434, then `[SYN, ACK]` to back to the TCP client at: 192.168.150.1 on a random port (the same port as the origin of the original [SYN]).
 
