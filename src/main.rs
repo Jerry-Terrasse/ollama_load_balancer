@@ -1,5 +1,5 @@
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Method, Request, Response, Server, StatusCode};
+use hyper::{Body, Method, Request, Response, Server, StatusCode, server::conn::AddrStream};
 
 use std::convert::Infallible;
 use std::sync::{
@@ -38,15 +38,21 @@ async fn main() {
         }),
         // Add more servers as needed
     ];
+    println!("Ollama servers list:");
+    for (index, server) in servers.iter().enumerate() {
+        println!("{}. {}", index + 1, server.address);
+    }
+    println!("");    
 
     let servers = Arc::new(RwLock::new(servers));
 
-    let make_svc = make_service_fn(|_conn| {
+    let make_svc = make_service_fn(|conn: &AddrStream| {
+        let remote_addr = conn.remote_addr();
         let servers = servers.clone();
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
                 let servers = servers.clone();
-                handle_request(req, servers)
+                handle_request(req, servers, remote_addr)
             }))
         }
     });
@@ -79,6 +85,7 @@ async fn shutdown_signal() {
 async fn handle_request(
     req: Request<Body>,
     servers: SharedServerList,
+    remote_addr: std::net::SocketAddr,
 ) -> Result<Response<Body>, Infallible> {
     // Only handle POST requests
     if req.method() != Method::POST {
@@ -95,7 +102,7 @@ async fn handle_request(
     let server = select_available_server(&servers).await;
 
     if let Some(server) = server {
-        println!("Chose server: {} to serve client {} POST {}", server.address, req.uri().host().unwrap_or("UNKNOWN"), path);
+        println!("Chose server: {} to serve client {} POST {}", server.address, remote_addr, path);
         // As long as guard object is alive, the server will be marked as "in use"
         let _guard = ServerGuard {
             server: server.clone(),
@@ -158,7 +165,7 @@ async fn handle_request(
             }
         }
     } else {
-        println!("No available servers to serve client {} POST {}", req.uri().host().unwrap_or("UNKNOWN"), path);
+        println!("No available servers to serve client {} POST {}", remote_addr, path);
         let response = Response::builder()
             .status(StatusCode::SERVICE_UNAVAILABLE)
             .body(Body::from("No available servers"))
