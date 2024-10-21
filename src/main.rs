@@ -158,8 +158,7 @@ async fn handle_request(
             Err(e) => {
                 println!("📛 Server: {} is bad: {}", server.address, e);
                 // TODO: This presumably means that somebody turned off this Ollama server.
-                // Add functionality to ignore the existence of this server for a certain amount
-                // of time.
+                // Add functionality to avoid using this server in the future
 
                 // Return an error to the client
                 let response = Response::builder()

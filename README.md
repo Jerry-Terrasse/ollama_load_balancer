@@ -1,23 +1,6 @@
 # Ollama Load Balancer
 Rust utility that load balances multiple https://ollama.com/ servers
 
-## Purpose
-Hardware for an Ollama server is expensive. This load balancer allows to distribute a limited number of Ollama servers optimally to multiple users on a local network.
-
-Let's say you have 60 users using this service and 6 Ollama servers. What's the probability that 10% of more of your users are prompting the LLM at the same time?
-
-## Principal
-All users on the network configure their `continue.dev` (VS Code extension) to point to the IP address of this load balancer instead of manually choosing a specific Ollama server.
-
-Any HTTP POST request for an LLM completion from a user triggers our app to make an identical HTTP POST request to a real Ollama server on bahalf of the user. All while streaming the response back to the user.
-
-We only choose servers that are currently available, we can know which Ollama servers are available based on the assumption that users only access the Ollama servers via this load balancer.
-
-## Supported Usages
-We support not only `continue.dev` but also any client that streams responses from an Ollama server such as https://openwebui.com/
-
-We support both `/api/chat` and `/api/generate` (CTRL+i in `continue.dev`), and actually we support any POST request that is based on streaming with `Transfer-Encoding: chunked` and `Content-Type: application/x-ndjson`.
-
 ## Usage
 1. Install Rust using Rustup
 
@@ -50,6 +33,23 @@ Received CTRL+C, shutting down gracefully...
 PS C:\Users\user\Downloads\ollama_load_balancer>
 ```
 
+## Purpose
+Hardware for an Ollama server is expensive. This load balancer allows to distribute a limited number of Ollama servers optimally to multiple users on a local network.
+
+Let's say you have 60 users using this service and 6 Ollama servers. What's the probability that 10% of more of your users are prompting the LLM at the same time?
+
+## Principal of Operation
+All users on the network configure their `continue.dev` (VS Code extension) to point to the IP address of this load balancer instead of manually choosing a specific Ollama server.
+
+Any HTTP POST request for an LLM completion from a user triggers our app to make an identical HTTP POST request to a real Ollama server on bahalf of the user. All while streaming the response back to the user.
+
+We only choose servers that are currently available, we can know which Ollama servers are available based on the assumption that users only access the Ollama servers via this load balancer.
+
+## Supported Usages
+We support not only `continue.dev` but also any client that streams responses from an Ollama server such as https://openwebui.com/
+
+We support both `/api/chat` and `/api/generate` (CTRL+i in `continue.dev`), and actually we support any POST request that is based on streaming with `Transfer-Encoding: chunked` and `Content-Type: application/x-ndjson`.
+
 ## Streaming
 
 The LLM doesn't have the complete response immediately which is why Ollama streams the completions.
@@ -57,6 +57,42 @@ The LLM doesn't have the complete response immediately which is why Ollama strea
 Streaming is implemented using `Newline Delimited JSON format` (ndjson). See `Content-Type: application/x-ndjson`.
 
 Each line of the ndjson format is mapped to one object in a JSON array.
+
+## TODOs
+- Test cancel generation from continue.dev
+
+- Test kill VS Code while generating
+
+- Test pause VM running ollama while generating
+
+- Test CTRL+C on Ollama while generating
+
+- Test HTTP GET request instead of POST- do we really need that check in the beginning?
+
+- Test with "stream: false" https://github.com/ollama/ollama/pull/639
+
+- Make servers list configurable externally to the compiled `ollama_load_balancer.exe`
+
+- Add feature that stops using bad Ollama server:\
+	Servers in the list might not all be reliable or even exist at the specified IP address.
+
+	The algorithm is simple. If a request from a specific server fails (even once) the client will get a `StatusCode::BAD_GATEWAY` error that one time. Since the server has failed our dear client, the server is marked untrusted.
+	
+	An untrusted server is picked only if there is no available trusted server.
+	
+	In the lucky event that an untrusted server gets picked, it gets another chance- and can earn full immediate forgiveness.
+	
+	What happens when we need to choose an untrusted server, and there are multiple unstrusted servers available? Who do we give the chance to?
+	
+	Just cycle through the untrusted servers!
+	Every untrusted server that you chose and response failed, mark as "second_chance_given" = true
+	
+	When choosing an untrusted server, only choose a server that hasn't been given a second chance.
+	
+	If all untrusted servers have already been given a second chance, mark all servers as "second_chance_given" = false so that you can cycle through them again!
+	
+	When a server initially becomes untrusted, it might have been a single mishap, so initially
+	it should have "second_chance_given" = false.
 
 ## Dependencies
 These are the versions I used:
