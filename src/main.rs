@@ -1,10 +1,7 @@
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode, server::conn::AddrStream};
 use std::convert::Infallible;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use futures_util::stream::StreamExt;
 use futures_util::Stream;
@@ -20,9 +17,22 @@ struct Args {
 }
 
 #[derive(Clone, Debug)]
+enum FailureRecord {
+    Reliable,
+    Unreliable,
+    SecondChanceGiven,
+}
+
+#[derive(Debug)]
+struct ServerState {
+    busy: bool,
+    failure_record: FailureRecord,
+}
+
+#[derive(Clone, Debug)]
 struct OllamaServer {
     address: String,
-    busy: Arc<AtomicBool>,
+    state: Arc<Mutex<ServerState>>,
 }
 
 type SharedServerList = Arc<RwLock<Vec<Arc<OllamaServer>>>>;
@@ -33,7 +43,10 @@ async fn main() {
     let servers = args.server.into_iter().map(|address| {
         Arc::new(OllamaServer {
             address,
-            busy: Arc::new(AtomicBool::new(false)),
+            state: Arc::new(Mutex::new(ServerState {
+                busy: false,
+                failure_record: FailureRecord::Reliable,
+            })),
         })
     }).collect::<Vec<_>>();
     
@@ -42,9 +55,9 @@ async fn main() {
         println!("{}. {}", index + 1, server.address);
     }
     println!("");
-
+    
     let servers = Arc::new(RwLock::new(servers));
-
+    
     let make_svc = make_service_fn(|conn: &AddrStream| {
         let remote_addr = conn.remote_addr();
         let servers = servers.clone();
@@ -55,16 +68,16 @@ async fn main() {
             }))
         }
     });
-
+    
     let addr = ([0, 0, 0, 0], 11434).into();
-
+    
     let server = Server::bind(&addr).serve(make_svc);
-
+    
     // Implement graceful shutdown
     let graceful = server.with_graceful_shutdown(shutdown_signal());
-
+    
     println!("👂 Ollama Load Balancer listening on http://{}", addr);
-
+    
     if let Err(e) = graceful.await {
         eprintln!("Server error: {}", e);
     }
@@ -75,8 +88,8 @@ async fn shutdown_signal() {
     tokio::signal::ctrl_c()
         .await
         .expect("Failed to listen for ctrl_c");
-
-    println!("Received CTRL+C, shutting down gracefully...");
+    
+    println!("☠️ Received CTRL+C, shutting down gracefully...");
     // The future returned by ctrl_c() will resolve when CTRL+C is pressed
     // Hyper will then stop accepting new connections
 }
@@ -93,52 +106,60 @@ async fn handle_request(
             .body(Body::from("Only POST requests are allowed"))
             .unwrap());
     }
-
+    
     // Get the path
     let path = req.uri().path();
-
+    
     // Select an available server
     let server = select_available_server(&servers).await;
-
+    
     if let Some(server) = server {
-        println!("🤖 Chose server: {} to serve client {} POST {}", server.address, remote_addr, path);
         // As long as guard object is alive, the server will be marked as "in use"
         let _guard = ServerGuard {
             server: server.clone(),
         };
-
+        
         // Build the request to the Ollama server
         let uri = format!("{}{}", server.address, path);
-
+        
         let client = reqwest::Client::new();
         let mut request_builder = client.request(req.method().clone(), &uri);
-
+        
         // Copy headers
         for (key, value) in req.headers() {
             request_builder = request_builder.header(key.as_str(), value.as_bytes());
         }
-
+        
         // Set up streaming body
         let body_stream = req.into_body().map(|chunk_result| match chunk_result {
             Ok(chunk) => Ok(chunk.to_vec()),
             Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
         });
-
+        
         let reqwest_body = reqwest::Body::wrap_stream(body_stream);
-
+        
         request_builder = request_builder.body(reqwest_body);
-
+        
         // Send the request and handle the response
         match request_builder.send().await {
             Ok(response) => {
+                // If the server was previously Unreliable or SecondChanceGiven, set it back to Reliable
+                {
+                    let mut state = server.state.lock().unwrap();
+                    if !matches!(state.failure_record, FailureRecord::Reliable) {
+                        state.failure_record = FailureRecord::Reliable;
+                        println!("🙏⚕️ Server {} has recovered and is now marked Reliable", server.address);
+                    }
+                }
+                
                 let status = response.status();
                 let mut resp_builder = Response::builder().status(status);
-
+                
                 // Copy headers
                 for (key, value) in response.headers() {
                     resp_builder = resp_builder.header(key, value.clone());
                 }
-
+                
                 // Wrap the response body stream with our custom stream.
                 // The purpose of our custom stream as opposed to directly using response.bytes_stream()
                 // is so we can keep track of the stream lifetime- to mark the server as available once again.
@@ -146,19 +167,27 @@ async fn handle_request(
                     stream: response.bytes_stream(),
                     _guard,
                 };
-
+                
                 // Convert our custom stream to hyper::Body
                 let hyper_body = Body::wrap_stream(resp_body);
-
+                
                 let response = resp_builder.body(hyper_body).unwrap();
-
+                
                 Ok(response)
             }
             Err(e) => {
-                println!("📛 Server: {} is bad: {}", server.address, e);
-                // TODO: This presumably means that somebody turned off this Ollama server.
-                // Add functionality to avoid using this server in the future
-
+                {
+                    let mut state = server.state.lock().unwrap();
+                    // Sever just failed our request, it's obviously not Reliable
+                    if matches!(state.failure_record, FailureRecord::Reliable) {
+                        state.failure_record = FailureRecord::Unreliable;
+                        println!("⛔😱 Server {} has failed, now marked unreliable. Error: {}", server.address, e);
+                    }
+                    else {
+                        println!("⛔😞 Server {} has failed again. Error: {}", server.address, e);
+                    }
+                }
+                
                 // Return an error to the client
                 let response = Response::builder()
                     .status(StatusCode::BAD_GATEWAY)
@@ -179,23 +208,51 @@ async fn handle_request(
 
 async fn select_available_server(servers: &SharedServerList) -> Option<Arc<OllamaServer>> {
     let servers = servers.read().await;
+
+    // 1st choice: Find an available reliable server
     for server in servers.iter() {
-        match server
-            .busy
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        {
-            Ok(previous) => {
-                // If compare_exchange was successful, and the previous value was `true`
-                if previous {
-                    return Some(server.clone());
-                }
-            }
-            Err(_) => {
-                // If compare_exchange failed, we simply continue to the next server
-                // No additional logic is required here
-            }
+        let mut state = server.state.lock().unwrap();
+        if matches!(state.failure_record, FailureRecord::Reliable) && !state.busy {
+            state.busy = true;
+            println!("🤖🦸 Chose reliable server: {}", server.address);
+            return Some(server.clone());
         }
     }
+    
+    // 2nd choice: If no reliable servers are available, select an untrusted available server that has
+    // only failed once in a row.
+    for server in servers.iter() {
+        let mut state = server.state.lock().unwrap();
+        if matches!(state.failure_record, FailureRecord::Unreliable) && !state.busy {
+            state.busy = true;
+            state.failure_record = FailureRecord::SecondChanceGiven;
+            println!("🤖😇 Giving server {} a second chance", server.address);
+            return Some(server.clone());
+        }
+    }
+    
+    // If all untrusted available servers have been given a second chance,
+    // reset the SecondChanceGiven mark so that we can again cycle through the untrusted servers-
+    // This ensures that we cycle equally through all untrusted servers- give everyone
+    // their chance
+    for server in servers.iter() {
+        let mut state = server.state.lock().unwrap();
+        if matches!(state.failure_record, FailureRecord::SecondChanceGiven) && !state.busy {
+            state.failure_record = FailureRecord::Unreliable;
+        }
+    }
+    // 3rd choice: Select any untrusted server, because we're out of options at this point
+    for server in servers.iter() {
+        let mut state = server.state.lock().unwrap();
+        if matches!(state.failure_record, FailureRecord::Unreliable) && !state.busy {
+            state.busy = true;
+            state.failure_record = FailureRecord::SecondChanceGiven;
+            println!("🤖😇 Giving server {} a third chance", server.address);
+            return Some(server.clone());
+        }
+    }
+    
+    // No servers available
     None
 }
 
@@ -206,7 +263,8 @@ struct ServerGuard {
 impl Drop for ServerGuard {
     fn drop(&mut self) {
         println!("🟢 Server {} now available", self.server.address);
-        self.server.busy.store(false, Ordering::SeqCst);
+        let mut state = self.server.state.lock().unwrap();
+        state.busy = false;
     }
 }
 
@@ -221,7 +279,7 @@ where
     S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
 {
     type Item = Result<bytes::Bytes, std::io::Error>;
-
+    
     fn poll_next(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,

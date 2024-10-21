@@ -66,27 +66,6 @@ Each line of the ndjson format is mapped to one object in a JSON array.
 
 - Test with "stream: false" https://github.com/ollama/ollama/pull/639
 
-- Add feature that stops using bad Ollama server:\
-	Servers in the list might not all be reliable or even exist at the specified IP address.
-
-	The algorithm is simple. If a request from a specific server fails (even once) the client will get a `StatusCode::BAD_GATEWAY` error that one time. Since the server has failed our dear client, the server is marked untrusted.
-	
-	An untrusted server is picked only if there is no available trusted server.
-	
-	In the lucky event that an untrusted server gets picked, it gets another chance- and can earn full immediate forgiveness.
-	
-	What happens when we need to choose an untrusted server, and there are multiple unstrusted servers available? Who do we give the chance to?
-	
-	Just cycle through the untrusted servers!
-	Every untrusted server that you chose and response failed, mark as "second_chance_given" = true
-	
-	When choosing an untrusted server, only choose a server that hasn't been given a second chance.
-	
-	If all untrusted servers have already been given a second chance, mark all servers as "second_chance_given" = false so that you can cycle through them again!
-	
-	When a server initially becomes untrusted, it might have been a single mishap, so initially
-	it should have "second_chance_given" = false.
-
 ## Dependencies
 These are the versions I used:
 
