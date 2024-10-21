@@ -1,6 +1,5 @@
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode, server::conn::AddrStream};
-
 use std::convert::Infallible;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -11,6 +10,14 @@ use futures_util::stream::StreamExt;
 use futures_util::Stream;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, required = true)]
+    server: Vec<String>,
+}
 
 #[derive(Clone, Debug)]
 struct OllamaServer {
@@ -22,22 +29,14 @@ type SharedServerList = Arc<RwLock<Vec<Arc<OllamaServer>>>>;
 
 #[tokio::main]
 async fn main() {
-    // Initialize the list of Ollama servers
-    let servers = vec![
+    let args = Args::parse();
+    let servers = args.server.into_iter().map(|address| {
         Arc::new(OllamaServer {
-            address: "http://192.168.150.134:11434".to_string(),
+            address,
             busy: Arc::new(AtomicBool::new(false)),
-        }),
-        Arc::new(OllamaServer {
-            address: "http://192.168.150.135:11434".to_string(),
-            busy: Arc::new(AtomicBool::new(false)),
-        }),
-        Arc::new(OllamaServer {
-            address: "http://192.168.150.136:11434".to_string(),
-            busy: Arc::new(AtomicBool::new(false)),
-        }),
-        // Add more servers as needed
-    ];
+        })
+    }).collect::<Vec<_>>();
+    
     println!("📒 Ollama servers list:");
     for (index, server) in servers.iter().enumerate() {
         println!("{}. {}", index + 1, server.address);

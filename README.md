@@ -12,25 +12,18 @@ Rust utility that load balances multiple https://ollama.com/ servers
 
 4. Run in Powershell, CMD, or terminal:
 ```txt
-PS C:\Users\user\Downloads\ollama_load_balancer> cargo run 
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
-     Running `target\debug\ollama_load_balancer.exe`
+PS C:\Users\user\Downloads\ollama_load_balancer> cargo run -- --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434
+   Compiling ollama_load_balancer v0.1.0 (C:\Users\user\Downloads\ollama_load_balancer)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.35s
+     Running `target\debug\ollama_load_balancer.exe --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434`
 📒 Ollama servers list:
 1. http://192.168.150.134:11434
 2. http://192.168.150.135:11434
 3. http://192.168.150.136:11434
 
 👂 Ollama Load Balancer listening on http://0.0.0.0:11434
-🤖 Chose server: http://192.168.150.134:11434 to serve client 127.0.0.1:54775 POST /api/chat
-🤖 Chose server: http://192.168.150.135:11434 to serve client 127.0.0.1:54777 POST /api/chat
-🤖 Chose server: http://192.168.150.136:11434 to serve client 127.0.0.1:54779 POST /api/chat
-🤷 No available servers to serve client 127.0.0.1:54781 POST /api/chat
-🟢 Server http://192.168.150.134:11434 now available
-🟢 Server http://192.168.150.136:11434 now available
-📛 Server: http://192.168.150.135:11434 is bad: error sending request for url (http://192.168.150.135:11434/api/chat): error trying to connect: tcp connect error: A connection attempt failed because the connected party did not properly respond after a period of time, or established connection failed because connected host has failed to respond. (os error 10060)
-🟢 Server http://192.168.150.135:11434 now available
 Received CTRL+C, shutting down gracefully...
-PS C:\Users\user\Downloads\ollama_load_balancer>
+PS C:\Users\user\Downloads\ollama_load_balancer> 
 ```
 
 ## Purpose
@@ -72,8 +65,6 @@ Each line of the ndjson format is mapped to one object in a JSON array.
 - Test HTTP GET request instead of POST- do we really need that check in the beginning?
 
 - Test with "stream: false" https://github.com/ollama/ollama/pull/639
-
-- Make servers list configurable externally to the compiled `ollama_load_balancer.exe`
 
 - Add feature that stops using bad Ollama server:\
 	Servers in the list might not all be reliable or even exist at the specified IP address.
