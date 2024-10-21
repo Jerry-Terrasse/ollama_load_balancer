@@ -89,7 +89,7 @@ async fn shutdown_signal() {
         .await
         .expect("Failed to listen for ctrl_c");
     
-    println!("☠️ Received CTRL+C, shutting down gracefully...");
+    println!("☠️  Received CTRL+C, shutting down gracefully...");
     // The future returned by ctrl_c() will resolve when CTRL+C is pressed
     // Hyper will then stop accepting new connections
 }
