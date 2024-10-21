@@ -15,7 +15,7 @@ use std::task::{Context, Poll};
 #[derive(Clone, Debug)]
 struct OllamaServer {
     address: String,
-    available: Arc<AtomicBool>,
+    busy: Arc<AtomicBool>,
 }
 
 type SharedServerList = Arc<RwLock<Vec<Arc<OllamaServer>>>>;
@@ -26,15 +26,15 @@ async fn main() {
     let servers = vec![
         Arc::new(OllamaServer {
             address: "http://192.168.150.134:11434".to_string(),
-            available: Arc::new(AtomicBool::new(true)),
+            busy: Arc::new(AtomicBool::new(false)),
         }),
         Arc::new(OllamaServer {
             address: "http://192.168.150.135:11434".to_string(),
-            available: Arc::new(AtomicBool::new(true)),
+            busy: Arc::new(AtomicBool::new(false)),
         }),
         Arc::new(OllamaServer {
             address: "http://192.168.150.136:11434".to_string(),
-            available: Arc::new(AtomicBool::new(true)),
+            busy: Arc::new(AtomicBool::new(false)),
         }),
         // Add more servers as needed
     ];
@@ -183,8 +183,8 @@ async fn select_available_server(servers: &SharedServerList) -> Option<Arc<Ollam
     let servers = servers.read().await;
     for server in servers.iter() {
         match server
-            .available
-            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .busy
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         {
             Ok(previous) => {
                 // If compare_exchange was successful, and the previous value was `true`
@@ -208,7 +208,7 @@ struct ServerGuard {
 impl Drop for ServerGuard {
     fn drop(&mut self) {
         println!("🟢 Server {} now available", self.server.address);
-        self.server.available.store(true, Ordering::SeqCst);
+        self.server.busy.store(false, Ordering::SeqCst);
     }
 }
 
