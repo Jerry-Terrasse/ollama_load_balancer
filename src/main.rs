@@ -1,5 +1,5 @@
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Method, Request, Response, Server, StatusCode, server::conn::AddrStream};
+use hyper::{Body, Request, Response, Server, StatusCode, server::conn::AddrStream};
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
@@ -100,7 +100,7 @@ async fn handle_request(
     remote_addr: std::net::SocketAddr,
 ) -> Result<Response<Body>, Infallible> {
     // Only handle POST requests
-    if req.method() != Method::POST {
+    if req.method() != hyper::Method::POST {
         return Ok(Response::builder()
             .status(StatusCode::METHOD_NOT_ALLOWED)
             .body(Body::from("Only POST requests are allowed"))
@@ -122,8 +122,10 @@ async fn handle_request(
         // Build the request to the Ollama server
         let uri = format!("{}{}", server.address, path);
         
-        let client = reqwest::Client::new();
-        let mut request_builder = client.request(req.method().clone(), &uri);
+        let client = reqwest::Client::builder()
+            .read_timeout(std::time::Duration::from_secs(10))
+            .build().unwrap();
+        let mut request_builder = client.request(reqwest::Method::POST, &uri);
         
         // Copy headers
         for (key, value) in req.headers() {
@@ -153,11 +155,11 @@ async fn handle_request(
                 }
                 
                 let status = response.status();
-                let mut resp_builder = Response::builder().status(status);
+                let mut resp_builder = Response::builder().status(u16::from(status));
                 
                 // Copy headers
                 for (key, value) in response.headers() {
-                    resp_builder = resp_builder.header(key, value.clone());
+                    resp_builder = resp_builder.header(key.to_string(), value.to_str().unwrap());
                 }
                 
                 // Wrap the response body stream with our custom stream.
