@@ -34,14 +34,16 @@ PS C:\Users\user\Downloads\ollama_load_balancer>
 ```
 
 ## Purpose
+A single Ollama server can (and should) only serve one request at the same time.
+
 Hardware for an Ollama server is expensive. This load balancer allows to distribute a limited number of Ollama servers optimally to multiple users on a local network.
 
-Let's say you have 60 users using this service and 6 Ollama servers. What's the probability that 10% of more of your users are prompting the LLM at the same time?
+Let's say you have 60 users of an LLM service and 6 Ollama servers. What's the probability that 10% or more of your users are prompting the LLM at the same time?
 
 ## Principal of Operation
 All users on the network configure their `continue.dev` (VS Code extension) to point to the IP address of this load balancer instead of manually choosing a specific Ollama server.
 
-Any HTTP POST request for an LLM completion from a user triggers our app to make an identical HTTP POST request to a real Ollama server on bahalf of the user. All while streaming the response back to the user.
+Any HTTP POST request for an LLM completion from a user triggers this utility to make an identical HTTP POST request to a real Ollama server on bahalf of the user. All while streaming the response back to the user.
 
 We only choose servers that are currently available, we can know which Ollama servers are available based on the assumption that users only access the Ollama servers via this load balancer.
 
