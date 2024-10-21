@@ -1,6 +1,8 @@
 # Ollama Load Balancer
 Rust utility that load balances multiple https://ollama.com/ servers
 
+![project logo small](./doc/logo/logo_small.png)
+
 ## Usage
 1. Install Rust using Rustup
 
@@ -8,9 +10,7 @@ Rust utility that load balances multiple https://ollama.com/ servers
 
 3. Adjust `let servers = vec!` section in the code
 
-4. `cargo run`
-
-Example output:
+4. Run in Powershell, CMD, or terminal:
 ```txt
 PS C:\Users\user\Downloads\ollama_load_balancer> cargo run 
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
