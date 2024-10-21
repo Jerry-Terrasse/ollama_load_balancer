@@ -41,7 +41,7 @@ async fn main() {
     for (index, server) in servers.iter().enumerate() {
         println!("{}. {}", index + 1, server.address);
     }
-    println!("");    
+    println!("");
 
     let servers = Arc::new(RwLock::new(servers));
 
