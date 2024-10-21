@@ -123,6 +123,8 @@ async fn handle_request(
         let uri = format!("{}{}", server.address, path);
         
         let client = reqwest::Client::builder()
+            // Timeout so that upon Ollama server crash / sudden shutdown
+            // we're not stuck forever (literally)
             .read_timeout(std::time::Duration::from_secs(10))
             .build().unwrap();
         let mut request_builder = client.request(reqwest::Method::POST, &uri);
