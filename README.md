@@ -8,6 +8,7 @@ Rust utility that load balances multiple https://ollama.com/ servers
 https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_01_2024_10_22/release/ollama_load_balancer.exe
 
 **Changes:**
+- Logic: Fix premature demoting of `Unreliable` server to `SecondChanceGiven`- that would cause bug where if user cancels generation mid-stream, an `Unreliable` server would be marked as `SecondChanceGiven` despite no failure occurring.
 - Logic: Fix bug where server gets marked as `Reliable` before stream ends and is successful- that would cause a server that fails every time mid-stream to ruin the user experience.
 - Code: Refactor- Use server "ADDRESS:PORT" as key to data structure holding the state of all servers, instead of holding Arc reference to specific server, this avoids needing multiple locks, improves performance, and fixes logical race condition caused by multiple locks.
 - Doc: Optimize documentation for end-users

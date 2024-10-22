@@ -209,13 +209,18 @@ async fn handle_request(
                 {
                     let mut servers_lock = servers.lock().unwrap();
                     if let Some(server) = servers_lock.get_mut(&key) {
-                        // Server just failed our request, it's obviously not Reliable
-                        if matches!(server.state.failure_record, FailureRecord::Reliable) {
-                            server.state.failure_record = FailureRecord::Unreliable;
-                            println!("⛔😱 Server {} didn't respond, now marked unreliable. Error: {}", key, e);
-                        }
-                        else {
-                            println!("⛔😞 Server {} again didn't respond. Error: {}", key, e);
+                        match server.state.failure_record {
+                            FailureRecord::Reliable => {
+                                server.state.failure_record = FailureRecord::Unreliable;
+                                println!("⛔😱 Server {} didn't respond, now marked unreliable. Error: {}", key, e);
+                            },
+                            FailureRecord::Unreliable => {
+                                server.state.failure_record = FailureRecord::SecondChanceGiven;
+                                println!("⛔😞 Unreliable server {} didn't respond. Error: {}", key, e);
+                            },
+                            FailureRecord::SecondChanceGiven => {
+                                println!("⛔🙄 Unreliable server {} didn't respond. Error: {}", key, e);
+                            },
                         }
                     }
                 }
@@ -255,7 +260,6 @@ async fn select_available_server(servers: &SharedServerList, remote_addr: &std::
     for (key, server) in servers_lock.iter_mut() {
         if matches!(server.state.failure_record, FailureRecord::Unreliable) && !server.state.busy {
             server.state.busy = true;
-            server.state.failure_record = FailureRecord::SecondChanceGiven;
             println!("🤖😇 Giving server {} another chance with client {}", key, remote_addr);
             return Some(key.clone());
         }
@@ -275,7 +279,6 @@ async fn select_available_server(servers: &SharedServerList, remote_addr: &std::
     for (key, server) in servers_lock.iter_mut() {
         if matches!(server.state.failure_record, FailureRecord::Unreliable) && !server.state.busy {
             server.state.busy = true;
-            server.state.failure_record = FailureRecord::SecondChanceGiven;
             println!("🤖😇 Giving server {} a 3rd+ chance with client {}", key, remote_addr);
             return Some(key.clone());
         }
@@ -328,11 +331,18 @@ where
                 {
                     let mut servers_lock = self.servers.lock().unwrap();
                     if let Some(server) = servers_lock.get_mut(&self.key) {
-                        if matches!(server.state.failure_record, FailureRecord::Reliable) {
-                            server.state.failure_record = FailureRecord::Unreliable;
-                            println!("⛔😱 Server {} has failed during streaming, now marked unreliable. Error: {}", self.key, e);
-                        } else {
-                            println!("⛔😞 Server {} has failed again during streaming. Error: {}", self.key, e);
+                        match server.state.failure_record {
+                            FailureRecord::Reliable => {
+                                server.state.failure_record = FailureRecord::Unreliable;
+                                println!("⛔😱 Server {} failed during streaming, now marked Unreliable. Error: {}", self.key, e);
+                            },
+                            FailureRecord::Unreliable => {
+                                server.state.failure_record = FailureRecord::SecondChanceGiven;
+                                println!("⛔😞 Unreliable server {} failed during streaming. Error: {}", self.key, e);
+                            },
+                            FailureRecord::SecondChanceGiven => {
+                                println!("⛔🙄 Unreliable server {} failed during streaming. Error: {}", self.key, e);
+                            },
                         }
                     }
                 }
@@ -347,7 +357,7 @@ where
                     if let Some(server) = servers_lock.get_mut(&self.key) {
                         if !matches!(server.state.failure_record, FailureRecord::Reliable) {
                             server.state.failure_record = FailureRecord::Reliable;
-                            println!("🙏⚕️ Server {} has completed streaming successfully and is now marked Reliable", self.key);
+                            println!("🙏⚕️  Server {} has completed streaming successfully and is now marked Reliable", self.key);
                         }
                     }
                 }
