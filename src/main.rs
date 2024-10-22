@@ -12,8 +12,17 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    // Syntax is --server IP:PORT --server IP:PORT --server IP:PORT ...
     #[arg(short, long, required = true)]
     server: Vec<String>,
+
+    // Max seconds to allow Ollama sever to pause.
+    // Don't set this too low because if the delay
+    // is too great at the beginning of response generation
+    // that will cause failure.
+    // Pass 0 to disable timeout
+    #[arg(short, long, default_value_t = 30)]
+    timeout: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +49,7 @@ type SharedServerList = Arc<RwLock<Vec<Arc<OllamaServer>>>>;
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+
     let servers = args.server.into_iter().map(|address| {
         Arc::new(OllamaServer {
             address,
@@ -50,12 +60,15 @@ async fn main() {
         })
     }).collect::<Vec<_>>();
     
+    println!("");
     println!("📒 Ollama servers list:");
     for (index, server) in servers.iter().enumerate() {
         println!("{}. {}", index + 1, server.address);
     }
     println!("");
-    
+    println!("⚙️ Timeout setting: Will abandon Ollama server after {} seconds of silence", args.timeout);
+    println!("");
+
     let servers = Arc::new(RwLock::new(servers));
     
     let make_svc = make_service_fn(|conn: &AddrStream| {
@@ -64,7 +77,7 @@ async fn main() {
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
                 let servers = servers.clone();
-                handle_request(req, servers, remote_addr)
+                handle_request(req, servers, remote_addr, args.timeout)
             }))
         }
     });
@@ -77,6 +90,7 @@ async fn main() {
     let graceful = server.with_graceful_shutdown(shutdown_signal());
     
     println!("👂 Ollama Load Balancer listening on http://{}", addr);
+    println!("");
     
     if let Err(e) = graceful.await {
         eprintln!("Server error: {}", e);
@@ -98,6 +112,7 @@ async fn handle_request(
     req: Request<Body>,
     servers: SharedServerList,
     remote_addr: std::net::SocketAddr,
+    timeout_secs: u32,
 ) -> Result<Response<Body>, Infallible> {
     // Only handle POST requests
     if req.method() != hyper::Method::POST {
@@ -122,11 +137,15 @@ async fn handle_request(
         // Build the request to the Ollama server
         let uri = format!("{}{}", server.address, path);
         
-        let client = reqwest::Client::builder()
-            // Timeout so that upon Ollama server crash / sudden shutdown
-            // we're not stuck forever (literally)
-            .read_timeout(std::time::Duration::from_secs(30))
-            .build().unwrap();
+        let mut builder = reqwest::Client::builder();
+        if timeout_secs == 0 {
+            builder = builder.pool_idle_timeout(None);
+        }
+        else {
+            let timeout = std::time::Duration::from_secs(timeout_secs.into());
+            builder = builder.read_timeout(timeout).pool_idle_timeout(timeout);
+        }
+        let client = builder.build().unwrap();
         let mut request_builder = client.request(reqwest::Method::POST, &uri);
         
         // Copy headers
