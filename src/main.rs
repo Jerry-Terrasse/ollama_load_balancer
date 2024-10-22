@@ -298,7 +298,7 @@ impl Drop for ServerGuard {
                     println!("🟢 Server {} now available", self.key);
                 },
                 FailureRecord::Unreliable => {
-                    println!("⚠️ Server {} now available but still not reliable", self.key);
+                    println!("⚠️  Server {} now available but still not reliable", self.key);
                 },
                 FailureRecord::SecondChanceGiven => {
                     // If failure_record == SecondChanceGiven that means an error message has already been printed
