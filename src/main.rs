@@ -212,7 +212,7 @@ async fn handle_request(
                         match server.state.failure_record {
                             FailureRecord::Reliable => {
                                 server.state.failure_record = FailureRecord::Unreliable;
-                                println!("⛔😱 Server {} didn't respond, now marked unreliable. Error: {}", key, e);
+                                println!("⛔😱 Server {} didn't respond, now marked Unreliable. Error: {}", key, e);
                             },
                             FailureRecord::Unreliable => {
                                 server.state.failure_record = FailureRecord::SecondChanceGiven;
