@@ -23,7 +23,7 @@ struct Args {
     /// Don't set this too low because if the delay is too great at the beginning of response generation that will cause failure.
     /// Pass 0 to disable timeout.
     ///
-    /// This is an optional argument. It specifies the maximum number of seconds to wait for a response from the Ollama server before considering it unavailable. The default value is 30 seconds.
+    /// This is an optional argument. It specifies the maximum number of seconds to wait for a response from the Ollama server before considering it unavailable
     #[arg(short, long, default_value_t = 30)]
     timeout: u32,
 }
