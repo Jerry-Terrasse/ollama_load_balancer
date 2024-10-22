@@ -209,18 +209,13 @@ async fn handle_request(
                 {
                     let mut servers_lock = servers.lock().unwrap();
                     if let Some(server) = servers_lock.get_mut(&key) {
-                        match server.state.failure_record {
-                            FailureRecord::Reliable => {
-                                server.state.failure_record = FailureRecord::Unreliable;
-                                println!("⛔😱 Server {} didn't respond, now marked Unreliable. Error: {}", key, e);
-                            },
-                            FailureRecord::Unreliable => {
-                                server.state.failure_record = FailureRecord::SecondChanceGiven;
-                                println!("⛔😞 Unreliable server {} didn't respond. Error: {}", key, e);
-                            },
-                            FailureRecord::SecondChanceGiven => {
-                                println!("⛔🙄 Unreliable server {} didn't respond. Error: {}", key, e);
-                            },
+                        if matches!(server.state.failure_record, FailureRecord::Reliable) {
+                            server.state.failure_record = FailureRecord::Unreliable;
+                            println!("⛔😱 Server {} didn't respond, now marked Unreliable. Error: {}", key, e);
+                        }
+                        else {
+                            server.state.failure_record = FailureRecord::SecondChanceGiven;
+                            println!("⛔😞 Unreliable server {} didn't respond. Error: {}", key, e);
                         }
                     }
                 }
@@ -331,18 +326,13 @@ where
                 {
                     let mut servers_lock = self.servers.lock().unwrap();
                     if let Some(server) = servers_lock.get_mut(&self.key) {
-                        match server.state.failure_record {
-                            FailureRecord::Reliable => {
-                                server.state.failure_record = FailureRecord::Unreliable;
-                                println!("⛔😱 Server {} failed during streaming, now marked Unreliable. Error: {}", self.key, e);
-                            },
-                            FailureRecord::Unreliable => {
-                                server.state.failure_record = FailureRecord::SecondChanceGiven;
-                                println!("⛔😞 Unreliable server {} failed during streaming. Error: {}", self.key, e);
-                            },
-                            FailureRecord::SecondChanceGiven => {
-                                println!("⛔🙄 Unreliable server {} failed during streaming. Error: {}", self.key, e);
-                            },
+                        if matches!(server.state.failure_record, FailureRecord::Reliable) {
+                            server.state.failure_record = FailureRecord::Unreliable;
+                            println!("⛔😱 Server {} failed during streaming, now marked Unreliable. Error: {}", self.key, e);
+                        }
+                        else {
+                            server.state.failure_record = FailureRecord::SecondChanceGiven;
+                            println!("⛔😞 Unreliable server {} failed during streaming. Error: {}", self.key, e);
                         }
                     }
                 }
