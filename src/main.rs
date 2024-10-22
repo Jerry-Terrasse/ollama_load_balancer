@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}. {}", index + 1, kvp.0);
     }
     println!("");
-    println!("⚙️ Timeout setting: Will abandon Ollama server after {} seconds of silence", args.timeout);
+    println!("⚙️  Timeout setting: Will abandon Ollama server after {} seconds of silence", args.timeout);
     println!("");
 
     let servers = Arc::new(Mutex::new(servers_map));
