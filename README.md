@@ -3,19 +3,32 @@ Rust utility that load balances multiple https://ollama.com/ servers
 
 ![project logo small](./doc/logo/logo_small.png)
 
+## Release Notes
+### 1.0.0
+https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_00_2024_10_22/release/ollama_load_balancer.exe
+
+**Features:**
+- Standalone command-line executable for Windows 10/11 with app icon, linked with MSVC 64-bit toolchain
+- Tested on `Windows 11 Pro 23H2`
+- Source code is cross platform- compile works on Ubuntu 22.04
+- Load balancing implemented
+- Streaming HTTP POST request handled by utility
+- Robust error handling- edge cases managed
+- Well-documented
+- Easy-to-read emoji logs to console
+- Configurable timeout via command line argument
+- Configurable Ollama servers `IP:PORT` list via command line arguments
+- Stateless- no saved state between executable runs, no configuration files- all CLI
+- Supports any REST server based on `HTTP POST` requests, not just Ollama.
+- Optimized for immediate response to user- avoid user needing to wait
+- Ideal server-ranking implementation for performance-identical Ollama servers in chaotic environment where they can be turned on and off on a whim.
+
 ## Usage
-1. Install Rust using Rustup
+1. Download the [latest release](#release-notes) executable
 
-2. Clone this repo's master branch
-
-3. Adjust `let servers = vec!` section in the code
-
-4. Run in Powershell, CMD, or terminal:
+2. Run in Powershell, CMD, or terminal:
 ```sh
-C:\Users\rzyro\Downloads\ollama_load_balancer>cargo run -- --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434
-   Compiling ollama_load_balancer v0.1.0 (C:\Users\rzyro\Downloads\ollama_load_balancer)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.94s
-     Running `target\debug\ollama_load_balancer.exe --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434`
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434
 
 📒 Ollama servers list:
 1. http://192.168.150.134:11434
@@ -62,7 +75,7 @@ C:\Users\rzyro\Downloads\ollama_load_balancer>cargo run -- --server http://192.1
 ☠️  Received CTRL+C, shutting down gracefully...
 🟢 Server http://192.168.150.136:11434 now available
 
-C:\Users\rzyro\Downloads\ollama_load_balancer>
+C:\Users\user\Downloads>
 ```
 
 Explanation of the above example:
