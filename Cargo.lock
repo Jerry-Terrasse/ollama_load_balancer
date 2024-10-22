@@ -695,6 +695,7 @@ dependencies = [
  "clap",
  "futures-util",
  "hyper 0.14.31",
+ "ordermap",
  "reqwest",
  "tokio",
  "winresource",
@@ -748,6 +749,15 @@ dependencies = [
  "libc",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "ordermap"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31f2bd7b03bf2c767e1bb7b91505dbe022833776e60480275e6f2fb0db0c7503"
+dependencies = [
+ "indexmap",
 ]
 
 [[package]]

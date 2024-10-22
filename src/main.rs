@@ -2,12 +2,12 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode, server::conn::AddrStream};
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
-use tokio::sync::RwLock;
 use futures_util::stream::StreamExt;
 use futures_util::Stream;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use clap::Parser;
+use ordermap::OrderMap;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -41,39 +41,41 @@ struct ServerState {
     failure_record: FailureRecord,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct OllamaServer {
-    address: String,
-    state: Arc<Mutex<ServerState>>,
+    state: ServerState,
 }
 
-type SharedServerList = Arc<RwLock<Vec<Arc<OllamaServer>>>>;
+type SharedServerList = Arc<Mutex<OrderMap<String, OllamaServer>>>;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let servers = args.server.into_iter().map(|address| {
-        Arc::new(OllamaServer {
-            address,
-            state: Arc::new(Mutex::new(ServerState {
+    let mut servers_map = OrderMap::new();
+    for address in args.server {
+        if servers_map.contains_key(&address) {
+            return Err(format!("Duplicate server address found: {}", address).into());
+        }
+        servers_map.insert(address.clone(), OllamaServer {
+            state: ServerState {
                 busy: false,
                 failure_record: FailureRecord::Reliable,
-            })),
-        })
-    }).collect::<Vec<_>>();
-    
+            },
+        });
+    }
+
     println!("");
     println!("📒 Ollama servers list:");
-    for (index, server) in servers.iter().enumerate() {
-        println!("{}. {}", index + 1, server.address);
+    for (index, kvp) in servers_map.iter().enumerate() {
+        println!("{}. {}", index + 1, kvp.0);
     }
     println!("");
     println!("⚙️ Timeout setting: Will abandon Ollama server after {} seconds of silence", args.timeout);
     println!("");
 
-    let servers = Arc::new(RwLock::new(servers));
-    
+    let servers = Arc::new(Mutex::new(servers_map));
+
     let make_svc = make_service_fn(|conn: &AddrStream| {
         let remote_addr = conn.remote_addr();
         let servers = servers.clone();
@@ -84,20 +86,22 @@ async fn main() {
             }))
         }
     });
-    
+
     let addr = ([0, 0, 0, 0], 11434).into();
-    
+
     let server = Server::bind(&addr).serve(make_svc);
-    
+
     // Implement graceful shutdown
     let graceful = server.with_graceful_shutdown(shutdown_signal());
-    
+
     println!("👂 Ollama Load Balancer listening on http://{}", addr);
     println!("");
-    
+
     if let Err(e) = graceful.await {
-        eprintln!("Server error: {}", e);
+        return Err(e.into());
     }
+
+    Ok(())
 }
 
 async fn shutdown_signal() {
@@ -105,7 +109,7 @@ async fn shutdown_signal() {
     tokio::signal::ctrl_c()
         .await
         .expect("Failed to listen for ctrl_c");
-    
+
     println!("☠️  Received CTRL+C, shutting down gracefully...");
     // The future returned by ctrl_c() will resolve when CTRL+C is pressed
     // Hyper will then stop accepting new connections
@@ -124,24 +128,25 @@ async fn handle_request(
             .body(Body::from("Only POST requests are allowed"))
             .unwrap());
     }
-    
+
     // Get the path
     let path = req.uri().path();
-    
+
     // Select an available server
-    let server = select_available_server(&servers, &remote_addr).await;
-    
-    if let Some(server) = server {
+    let server_key = select_available_server(&servers, &remote_addr).await;
+
+    if let Some(key) = server_key {
         // As long as guard object is alive, the server will be marked as "in use"
         let _guard = ServerGuard {
-            server: server.clone(),
+            servers: servers.clone(),
+            key: key.clone(),
         };
-        
+
         // Build the request to the Ollama server
-        let uri = format!("{}{}", server.address, path);
-        
+        let uri = format!("{}{}", key, path);
+
         let mut builder = reqwest::Client::builder();
-        // Low value for connect timeout, to get an immedate error
+        // Low value for connect timeout, to get an immediate error
         // if the Ollama server isn't even running.
         // Even if the Ollama server takes its time, it should still be
         // able to immediately facilitate a TCP connection with us.
@@ -155,71 +160,76 @@ async fn handle_request(
         }
         let client = builder.build().unwrap();
         let mut request_builder = client.request(reqwest::Method::POST, &uri);
-        
+
         // Copy headers
         for (key, value) in req.headers() {
             request_builder = request_builder.header(key.as_str(), value.as_bytes());
         }
-        
+
         // Set up streaming body
         let body_stream = req.into_body().map(|chunk_result| match chunk_result {
             Ok(chunk) => Ok(chunk.to_vec()),
             Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
         });
-        
+
         let reqwest_body = reqwest::Body::wrap_stream(body_stream);
-        
+
         request_builder = request_builder.body(reqwest_body);
-        
+
         // Send the request and handle the response
         match request_builder.send().await {
             Ok(response) => {
                 // If the server was previously Unreliable or SecondChanceGiven, set it back to Reliable
                 {
-                    let mut state = server.state.lock().unwrap();
-                    if !matches!(state.failure_record, FailureRecord::Reliable) {
-                        state.failure_record = FailureRecord::Reliable;
-                        println!("🙏⚕️ Server {} has recovered and is now marked Reliable", server.address);
+                    let mut servers_lock = servers.lock().unwrap();
+                    if let Some(server) = servers_lock.get_mut(&key) {
+                        if !matches!(server.state.failure_record, FailureRecord::Reliable) {
+                            server.state.failure_record = FailureRecord::Reliable;
+                            println!("🙏⚕️ Server {} has recovered and is now marked Reliable", key);
+                        }
                     }
                 }
-                
+
                 let status = response.status();
                 let mut resp_builder = Response::builder().status(u16::from(status));
-                
+
                 // Copy headers
                 for (key, value) in response.headers() {
                     resp_builder = resp_builder.header(key.to_string(), value.to_str().unwrap());
                 }
-                
+
                 // Wrap the response body stream with our custom stream.
                 // The purpose of our custom stream as opposed to directly using response.bytes_stream()
                 // is so we can keep track of the stream lifetime- to mark the server as available once again.
                 let resp_body = ResponseBodyWithGuard {
                     stream: response.bytes_stream(),
                     _guard,
-                    server: server.clone(),
-                };                
-                
+                    servers: servers.clone(),
+                    key: key.clone(),
+                };
+
                 // Convert our custom stream to hyper::Body
                 let hyper_body = Body::wrap_stream(resp_body);
-                
+
                 let response = resp_builder.body(hyper_body).unwrap();
-                
+
                 Ok(response)
             }
             Err(e) => {
                 {
-                    let mut state = server.state.lock().unwrap();
-                    // Sever just failed our request, it's obviously not Reliable
-                    if matches!(state.failure_record, FailureRecord::Reliable) {
-                        state.failure_record = FailureRecord::Unreliable;
-                        println!("⛔😱 Server {} didn't respond, now marked unreliable. Error: {}", server.address, e);
-                    }
-                    else {
-                        println!("⛔😞 Server {} again didn't respond. Error: {}", server.address, e);
+                    let mut servers_lock = servers.lock().unwrap();
+                    if let Some(server) = servers_lock.get_mut(&key) {
+                        // Server just failed our request, it's obviously not Reliable
+                        if matches!(server.state.failure_record, FailureRecord::Reliable) {
+                            server.state.failure_record = FailureRecord::Unreliable;
+                            println!("⛔😱 Server {} didn't respond, now marked unreliable. Error: {}", key, e);
+                        }
+                        else {
+                            println!("⛔😞 Server {} again didn't respond. Error: {}", key, e);
+                        }
                     }
                 }
-                
+
                 // Return an error to the client
                 let response = Response::builder()
                     .status(StatusCode::BAD_GATEWAY)
@@ -238,65 +248,65 @@ async fn handle_request(
     }
 }
 
-async fn select_available_server(servers: &SharedServerList, remote_addr: &std::net::SocketAddr) -> Option<Arc<OllamaServer>> {
-    let servers = servers.read().await;
+async fn select_available_server(servers: &SharedServerList, remote_addr: &std::net::SocketAddr) -> Option<String> {
+    let mut servers_lock = servers.lock().unwrap();
 
     // 1st choice: Find an available reliable server
-    for server in servers.iter() {
-        let mut state = server.state.lock().unwrap();
-        if matches!(state.failure_record, FailureRecord::Reliable) && !state.busy {
-            state.busy = true;
-            println!("🤖🦸 Chose reliable server: {} to serve client {}", server.address, remote_addr);
-            return Some(server.clone());
+    for (key, server) in servers_lock.iter_mut() {
+        if matches!(server.state.failure_record, FailureRecord::Reliable) && !server.state.busy {
+            server.state.busy = true;
+            println!("🤖🦸 Chose reliable server: {} to serve client {}", key, remote_addr);
+            return Some(key.clone());
         }
     }
-    
+
     // 2nd choice: If no reliable servers are available, select an untrusted available server that has
     // only failed once in a row.
-    for server in servers.iter() {
-        let mut state = server.state.lock().unwrap();
-        if matches!(state.failure_record, FailureRecord::Unreliable) && !state.busy {
-            state.busy = true;
-            state.failure_record = FailureRecord::SecondChanceGiven;
-            println!("🤖😇 Giving server {} another chance with client {}", server.address, remote_addr);
-            return Some(server.clone());
+    for (key, server) in servers_lock.iter_mut() {
+        if matches!(server.state.failure_record, FailureRecord::Unreliable) && !server.state.busy {
+            server.state.busy = true;
+            server.state.failure_record = FailureRecord::SecondChanceGiven;
+            println!("🤖😇 Giving server {} another chance with client {}", key, remote_addr);
+            return Some(key.clone());
         }
     }
-    
+
     // If all untrusted available servers have been given a second chance,
     // reset the SecondChanceGiven mark so that we can again cycle through the untrusted servers-
     // This ensures that we cycle equally through all untrusted servers- give everyone
     // their chance
-    for server in servers.iter() {
-        let mut state = server.state.lock().unwrap();
-        if matches!(state.failure_record, FailureRecord::SecondChanceGiven) && !state.busy {
-            state.failure_record = FailureRecord::Unreliable;
+    for server in servers_lock.values_mut() {
+        if matches!(server.state.failure_record, FailureRecord::SecondChanceGiven) && !server.state.busy {
+            server.state.failure_record = FailureRecord::Unreliable;
         }
     }
+
     // 3rd choice: Select any untrusted server, because we're out of options at this point
-    for server in servers.iter() {
-        let mut state = server.state.lock().unwrap();
-        if matches!(state.failure_record, FailureRecord::Unreliable) && !state.busy {
-            state.busy = true;
-            state.failure_record = FailureRecord::SecondChanceGiven;
-            println!("🤖😇 Giving server {} a 3rd+ chance with client {}", server.address, remote_addr);
-            return Some(server.clone());
+    for (key, server) in servers_lock.iter_mut() {
+        if matches!(server.state.failure_record, FailureRecord::Unreliable) && !server.state.busy {
+            server.state.busy = true;
+            server.state.failure_record = FailureRecord::SecondChanceGiven;
+            println!("🤖😇 Giving server {} a 3rd+ chance with client {}", key, remote_addr);
+            return Some(key.clone());
         }
     }
-    
+
     // No servers available
     None
 }
 
 struct ServerGuard {
-    server: Arc<OllamaServer>,
+    servers: SharedServerList,
+    key: String,
 }
 
 impl Drop for ServerGuard {
     fn drop(&mut self) {
-        println!("🟢 Server {} now available", self.server.address);
-        let mut state = self.server.state.lock().unwrap();
-        state.busy = false;
+        let mut servers_lock = self.servers.lock().unwrap();
+        if let Some(server) = servers_lock.get_mut(&self.key) {
+            server.state.busy = false;
+            println!("🟢 Server {} now available", self.key);
+        }
     }
 }
 
@@ -304,7 +314,8 @@ impl Drop for ServerGuard {
 struct ResponseBodyWithGuard<S> {
     stream: S,
     _guard: ServerGuard,
-    server: Arc<OllamaServer>,
+    servers: SharedServerList,
+    key: String,
 }
 
 impl<S> Stream for ResponseBodyWithGuard<S>
@@ -312,7 +323,7 @@ where
     S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
 {
     type Item = Result<bytes::Bytes, std::io::Error>;
-    
+
     fn poll_next(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -324,12 +335,14 @@ where
                 // An error occurred during streaming
                 // Update the server's state to mark it as unreliable
                 {
-                    let mut state = self.server.state.lock().unwrap();
-                    if matches!(state.failure_record, FailureRecord::Reliable) {
-                        state.failure_record = FailureRecord::Unreliable;
-                        println!("⛔😱 Server {} has failed during streaming, now marked unreliable. Error: {}", self.server.address, e);
-                    } else {
-                        println!("⛔😞 Server {} has failed again during streaming. Error: {}", self.server.address, e);
+                    let mut servers_lock = self.servers.lock().unwrap();
+                    if let Some(server) = servers_lock.get_mut(&self.key) {
+                        if matches!(server.state.failure_record, FailureRecord::Reliable) {
+                            server.state.failure_record = FailureRecord::Unreliable;
+                            println!("⛔😱 Server {} has failed during streaming, now marked unreliable. Error: {}", self.key, e);
+                        } else {
+                            println!("⛔😞 Server {} has failed again during streaming. Error: {}", self.key, e);
+                        }
                     }
                 }
                 // Return the error to the client
