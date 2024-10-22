@@ -12,15 +12,18 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    // Syntax is --server IP:PORT --server IP:PORT --server IP:PORT ...
+    /// Syntax is --server IP:PORT --server IP:PORT --server IP:PORT ...
+    ///
+    /// This is a required argument. It specifies the addresses of the Ollama servers that the load balancer will distribute requests to.
     #[arg(short, long, required = true)]
     server: Vec<String>,
 
-    // Max seconds to allow Ollama sever to pause.
-    // Don't set this too low because if the delay
-    // is too great at the beginning of response generation
-    // that will cause failure.
-    // Pass 0 to disable timeout
+    /// Max seconds to allow Ollama server to pause.
+    ///
+    /// Don't set this too low because if the delay is too great at the beginning of response generation that will cause failure.
+    /// Pass 0 to disable timeout.
+    ///
+    /// This is an optional argument. It specifies the maximum number of seconds to wait for a response from the Ollama server before considering it unavailable. The default value is 30 seconds.
     #[arg(short, long, default_value_t = 30)]
     timeout: u32,
 }
