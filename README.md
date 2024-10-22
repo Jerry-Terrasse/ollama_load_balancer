@@ -11,20 +11,72 @@ Rust utility that load balances multiple https://ollama.com/ servers
 3. Adjust `let servers = vec!` section in the code
 
 4. Run in Powershell, CMD, or terminal:
-```txt
-PS C:\Users\user\Downloads\ollama_load_balancer> cargo run -- --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434
-   Compiling ollama_load_balancer v0.1.0 (C:\Users\user\Downloads\ollama_load_balancer)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.35s
+```sh
+C:\Users\rzyro\Downloads\ollama_load_balancer>cargo run -- --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434
+   Compiling ollama_load_balancer v0.1.0 (C:\Users\rzyro\Downloads\ollama_load_balancer)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.94s
      Running `target\debug\ollama_load_balancer.exe --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434`
+
 📒 Ollama servers list:
 1. http://192.168.150.134:11434
 2. http://192.168.150.135:11434
 3. http://192.168.150.136:11434
 
+⚙️ Timeout setting: Will abandon Ollama server after 30 seconds of silence
+
 👂 Ollama Load Balancer listening on http://0.0.0.0:11434
-Received CTRL+C, shutting down gracefully...
-PS C:\Users\user\Downloads\ollama_load_balancer> 
+
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:59527
+🤖🦸 Chose reliable server: http://192.168.150.135:11434 to serve client 127.0.0.1:59529
+🤖🦸 Chose reliable server: http://192.168.150.136:11434 to serve client 127.0.0.1:59531
+🤷 No available servers to serve client 127.0.0.1:59533
+🟢 Server http://192.168.150.136:11434 now available
+🟢 Server http://192.168.150.135:11434 now available
+🟢 Server http://192.168.150.134:11434 now available
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:59564
+🤖🦸 Chose reliable server: http://192.168.150.135:11434 to serve client 127.0.0.1:59566
+⛔😱 Server http://192.168.150.134:11434 has failed, now marked unreliable. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
+🟢 Server http://192.168.150.134:11434 now available
+⛔😱 Server http://192.168.150.135:11434 has failed, now marked unreliable. Error: error sending request for url (http://192.168.150.135:11434/api/chat)
+🟢 Server http://192.168.150.135:11434 now available
+🤖🦸 Chose reliable server: http://192.168.150.136:11434 to serve client 127.0.0.1:59569
+⛔😱 Server http://192.168.150.136:11434 has failed, now marked unreliable. Error: error sending request for url (http://192.168.150.136:11434/api/chat)
+🟢 Server http://192.168.150.136:11434 now available
+🤖😇 Giving server http://192.168.150.134:11434 another chance with client 127.0.0.1:59573
+⛔😞 Server http://192.168.150.134:11434 has failed again. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
+🟢 Server http://192.168.150.134:11434 now available
+🤖😇 Giving server http://192.168.150.135:11434 another chance with client 127.0.0.1:59577
+⛔😞 Server http://192.168.150.135:11434 has failed again. Error: error sending request for url (http://192.168.150.135:11434/api/chat)
+🟢 Server http://192.168.150.135:11434 now available
+🤖😇 Giving server http://192.168.150.136:11434 another chance with client 127.0.0.1:59580
+⛔😞 Server http://192.168.150.136:11434 has failed again. Error: error sending request for url (http://192.168.150.136:11434/api/chat)
+🟢 Server http://192.168.150.136:11434 now available
+🤖😇 Giving server http://192.168.150.134:11434 a 3rd+ chance with client 127.0.0.1:59590
+⛔😞 Server http://192.168.150.134:11434 has failed again. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
+🟢 Server http://192.168.150.134:11434 now available
+🤖😇 Giving server http://192.168.150.135:11434 another chance with client 127.0.0.1:59593
+⛔😞 Server http://192.168.150.135:11434 has failed again. Error: error sending request for url (http://192.168.150.135:11434/api/chat)
+🟢 Server http://192.168.150.135:11434 now available
+🤖😇 Giving server http://192.168.150.136:11434 another chance with client 127.0.0.1:59595
+🙏⚕️ Server http://192.168.150.136:11434 has recovered and is now marked Reliable
+☠️  Received CTRL+C, shutting down gracefully...
+🟢 Server http://192.168.150.136:11434 now available
+
+C:\Users\rzyro\Downloads\ollama_load_balancer>
 ```
+
+Explanation of the above example:
+1. We set up 4 VS Code instances (to simulate users) and turn on 3 Ollama servers. We first quickly request LLM chat completion from all four users- Three manage, but the fourth causes: `🤷 No available servers to serve client 127.0.0.1:59533`.
+
+2. We turn off the Ollama servers, then prompt 3 times- all of which fail. All three servers are marked "unreliable".
+
+3. Ollama servers still off, we prompt 3 times again- all of which fail. All three servers are marked "SecondChanceGiven" (which is lower priority than "unreliable").
+
+4. We once prompt again, `192.168.150.134` gets a `3rd+ chance`, it fails of course. But since all unreliable servers are marked `SecondChanceGiven`, that score has no meaning anymore, so we upgrade them all to `unreliable` once again.
+
+4. We turn back on only server `192.168.150.136`, and prompt twice. `192.168.150.135` fails and then `192.168.150.136` finally `🙏⚕️ Server http://192.168.150.136:11434 has recovered`, the rest are still failing. "Recovered" means that `192.168.150.136` will definitely be chosen during every upcoming prompting, until it either fails or is busy.
+
+5. We press CTRL+C, but server `192.168.150.136` is still generating so the exit is delayed.
 
 ## Purpose
 A single Ollama server can (and should) only serve one request at the same time.
@@ -54,6 +106,8 @@ Streaming is implemented using `Newline Delimited JSON format` (ndjson). See `Co
 Each line of the ndjson format is mapped to one object in a JSON array.
 
 ## TODOs
+- Fix bug- Pause VM running Ollama while generating a response- causes premature close error, but it's not registered as an error for Ollama server punishment purposes.
+
 - Test with "stream: false" https://github.com/ollama/ollama/pull/639
 
 ## Dependencies
