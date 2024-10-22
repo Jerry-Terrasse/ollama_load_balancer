@@ -179,17 +179,6 @@ async fn handle_request(
         // Send the request and handle the response
         match request_builder.send().await {
             Ok(response) => {
-                // If the server was previously Unreliable or SecondChanceGiven, set it back to Reliable
-                {
-                    let mut servers_lock = servers.lock().unwrap();
-                    if let Some(server) = servers_lock.get_mut(&key) {
-                        if !matches!(server.state.failure_record, FailureRecord::Reliable) {
-                            server.state.failure_record = FailureRecord::Reliable;
-                            println!("🙏⚕️ Server {} has recovered and is now marked Reliable", key);
-                        }
-                    }
-                }
-
                 let status = response.status();
                 let mut resp_builder = Response::builder().status(u16::from(status));
 
@@ -206,6 +195,7 @@ async fn handle_request(
                     _guard,
                     servers: servers.clone(),
                     key: key.clone(),
+                    had_error: false,
                 };
 
                 // Convert our custom stream to hyper::Body
@@ -316,6 +306,7 @@ struct ResponseBodyWithGuard<S> {
     _guard: ServerGuard,
     servers: SharedServerList,
     key: String,
+    had_error: bool,
 }
 
 impl<S> Stream for ResponseBodyWithGuard<S>
@@ -333,7 +324,7 @@ where
             Poll::Ready(Some(Ok(bytes))) => Poll::Ready(Some(Ok(bytes))),
             Poll::Ready(Some(Err(e))) => {
                 // An error occurred during streaming
-                // Update the server's state to mark it as unreliable
+                self.had_error = true; // Mark that an error has occurred
                 {
                     let mut servers_lock = self.servers.lock().unwrap();
                     if let Some(server) = servers_lock.get_mut(&self.key) {
@@ -348,7 +339,20 @@ where
                 // Return the error to the client
                 Poll::Ready(Some(Err(std::io::Error::new(std::io::ErrorKind::Other, e))))
             },
-            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Ready(None) => {
+                if !self.had_error {
+                    // Streaming ended successfully
+                    // Mark the server as Reliable
+                    let mut servers_lock = self.servers.lock().unwrap();
+                    if let Some(server) = servers_lock.get_mut(&self.key) {
+                        if !matches!(server.state.failure_record, FailureRecord::Reliable) {
+                            server.state.failure_record = FailureRecord::Reliable;
+                            println!("🙏⚕️ Server {} has completed streaming successfully and is now marked Reliable", self.key);
+                        }
+                    }
+                }
+                Poll::Ready(None)
+            },
             Poll::Pending => Poll::Pending,
         }
     }
