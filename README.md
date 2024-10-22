@@ -24,18 +24,11 @@ https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_00_2024_10_2
 - Ideal server-ranking implementation for performance-identical Ollama servers in chaotic environment where they can be turned on and off on a whim.
 
 ## Usage
-1. Install Rust using Rustup
+1. Download the [latest release](#release-notes) executable
 
-2. Clone this repo's master branch
-
-3. Adjust `let servers = vec!` section in the code
-
-4. Run in Powershell, CMD, or terminal:
+2. Run in Powershell, CMD, or terminal:
 ```sh
-C:\Users\rzyro\Downloads\ollama_load_balancer>cargo run -- --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434
-   Compiling ollama_load_balancer v0.1.0 (C:\Users\rzyro\Downloads\ollama_load_balancer)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.94s
-     Running `target\debug\ollama_load_balancer.exe --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434`
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434
 
 📒 Ollama servers list:
 1. http://192.168.150.134:11434
@@ -82,7 +75,7 @@ C:\Users\rzyro\Downloads\ollama_load_balancer>cargo run -- --server http://192.1
 ☠️  Received CTRL+C, shutting down gracefully...
 🟢 Server http://192.168.150.136:11434 now available
 
-C:\Users\rzyro\Downloads\ollama_load_balancer>
+C:\Users\user\Downloads>
 ```
 
 Explanation of the above example:
