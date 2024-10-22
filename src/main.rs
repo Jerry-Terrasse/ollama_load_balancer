@@ -138,6 +138,11 @@ async fn handle_request(
         let uri = format!("{}{}", server.address, path);
         
         let mut builder = reqwest::Client::builder();
+        // Low value for connect timeout, to get an immedate error
+        // if the Ollama server isn't even running.
+        // Even if the Ollama server takes its time, it should still be
+        // able to immediately facilitate a TCP connection with us.
+        builder = builder.connect_timeout(std::time::Duration::from_secs(1));
         if timeout_secs == 0 {
             builder = builder.pool_idle_timeout(None);
         }
