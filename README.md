@@ -54,16 +54,6 @@ Streaming is implemented using `Newline Delimited JSON format` (ndjson). See `Co
 Each line of the ndjson format is mapped to one object in a JSON array.
 
 ## TODOs
-- Test cancel generation from continue.dev
-
-- Test kill VS Code while generating
-
-- Test pause VM running ollama while generating
-
-- Test CTRL+C on Ollama while generating
-
-- Test HTTP GET request instead of POST- do we really need that check in the beginning?
-
 - Test with "stream: false" https://github.com/ollama/ollama/pull/639
 
 ## Dependencies
