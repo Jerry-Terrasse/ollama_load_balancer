@@ -111,7 +111,7 @@ async fn handle_request(
     let path = req.uri().path();
     
     // Select an available server
-    let server = select_available_server(&servers).await;
+    let server = select_available_server(&servers, &remote_addr).await;
     
     if let Some(server) = server {
         // As long as guard object is alive, the server will be marked as "in use"
@@ -125,7 +125,7 @@ async fn handle_request(
         let client = reqwest::Client::builder()
             // Timeout so that upon Ollama server crash / sudden shutdown
             // we're not stuck forever (literally)
-            .read_timeout(std::time::Duration::from_secs(10))
+            .read_timeout(std::time::Duration::from_secs(30))
             .build().unwrap();
         let mut request_builder = client.request(reqwest::Method::POST, &uri);
         
@@ -201,7 +201,7 @@ async fn handle_request(
             }
         }
     } else {
-        println!("🤷 No available servers to serve client {} POST {}", remote_addr, path);
+        println!("🤷 No available servers to serve client {}", remote_addr);
         let response = Response::builder()
             .status(StatusCode::SERVICE_UNAVAILABLE)
             .body(Body::from("No available servers"))
@@ -210,7 +210,7 @@ async fn handle_request(
     }
 }
 
-async fn select_available_server(servers: &SharedServerList) -> Option<Arc<OllamaServer>> {
+async fn select_available_server(servers: &SharedServerList, remote_addr: &std::net::SocketAddr) -> Option<Arc<OllamaServer>> {
     let servers = servers.read().await;
 
     // 1st choice: Find an available reliable server
@@ -218,7 +218,7 @@ async fn select_available_server(servers: &SharedServerList) -> Option<Arc<Ollam
         let mut state = server.state.lock().unwrap();
         if matches!(state.failure_record, FailureRecord::Reliable) && !state.busy {
             state.busy = true;
-            println!("🤖🦸 Chose reliable server: {}", server.address);
+            println!("🤖🦸 Chose reliable server: {} to serve client {}", server.address, remote_addr);
             return Some(server.clone());
         }
     }
@@ -230,7 +230,7 @@ async fn select_available_server(servers: &SharedServerList) -> Option<Arc<Ollam
         if matches!(state.failure_record, FailureRecord::Unreliable) && !state.busy {
             state.busy = true;
             state.failure_record = FailureRecord::SecondChanceGiven;
-            println!("🤖😇 Giving server {} a second chance", server.address);
+            println!("🤖😇 Giving server {} another chance with client {}", server.address, remote_addr);
             return Some(server.clone());
         }
     }
@@ -251,7 +251,7 @@ async fn select_available_server(servers: &SharedServerList) -> Option<Arc<Ollam
         if matches!(state.failure_record, FailureRecord::Unreliable) && !state.busy {
             state.busy = true;
             state.failure_record = FailureRecord::SecondChanceGiven;
-            println!("🤖😇 Giving server {} a third chance", server.address);
+            println!("🤖😇 Giving server {} a 3rd+ chance with client {}", server.address, remote_addr);
             return Some(server.clone());
         }
     }
