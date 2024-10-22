@@ -297,7 +297,7 @@ impl Drop for ServerGuard {
                 println!("🟢 Server {} now available", self.key);
             }
             else {
-                println!("⚠️  Server {} now available but still not reliable", self.key);
+                println!("⚠️  Connection closed with Unreliable Server {}", self.key);
             }
         }
     }
