@@ -293,7 +293,9 @@ impl Drop for ServerGuard {
         let mut servers_lock = self.servers.lock().unwrap();
         if let Some(server) = servers_lock.get_mut(&self.key) {
             server.state.busy = false;
-            println!("🟢 Server {} now available", self.key);
+            if matches!(server.state.failure_record, FailureRecord::Reliable) {
+                println!("🟢 Server {} now available", self.key);
+            }
         }
     }
 }
