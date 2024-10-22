@@ -92,6 +92,33 @@ Any HTTP POST request for an LLM completion from a user triggers this utility to
 
 We only choose servers that are currently available, we can know which Ollama servers are available based on the assumption that users only access the Ollama servers via this load balancer.
 
+### Unreliable Servers
+
+We assume that the list of Ollama servers isn't perfect.\
+A servers might be temporarily or permanently off, a server might have changed its IP address.\
+A server might be faulty- fail every time.
+
+Therefore we introduced a state for each server: `failure_record: FailureRecord`
+
+```rs
+enum FailureRecord {
+    Reliable,
+    Unreliable,
+    SecondChanceGiven,
+}
+```
+
+We want to avoid a bad server from causing the user experience to be unreliable when using this load balancer.
+
+Therefore if a server fails during a request, we mark it as `Unreliable`.\
+We only choose an unreliable server to process a request if there's no `Reliable` server available (not `busy`)
+
+If an `Unreliable` server is given a chance to repent, and it succeeds to process a request, then it's marked as `Reliable` again, because that most likely means that somebody turned the PC and the Ollama server on.
+
+Question is: how do we choose from multiple possible `Unreliable` servers? How do we make sure that they all get a timely chance to repent?
+
+That's what `SecondChanceGiven` is for. It's a state that we can flip to ensure that we cycle through all `Unreliable` servers evenly, avoiding the situation where we try a single `Unreliable` server twice to no avail while ignoring the other (possibly good) servers.
+
 ## Supported Usages
 We support not only `continue.dev` but also any client that streams responses from an Ollama server such as https://openwebui.com/
 
@@ -104,6 +131,8 @@ The LLM doesn't have the complete response immediately which is why Ollama strea
 Streaming is implemented using `Newline Delimited JSON format` (ndjson). See `Content-Type: application/x-ndjson`.
 
 Each line of the ndjson format is mapped to one object in a JSON array.
+
+Static HTTP is also supported (`stream: false` in JSON given in POST request to Ollama).
 
 ## Dependencies
 These are the versions I used:
