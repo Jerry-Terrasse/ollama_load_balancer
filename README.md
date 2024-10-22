@@ -1,5 +1,5 @@
 # Ollama Load Balancer
-Rust utility that load balances multiple https://ollama.com/ servers
+Autonomous Rust utility that load balances multiple https://ollama.com/ servers
 
 ![project logo small](./doc/logo/logo_small.png)
 
