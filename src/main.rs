@@ -293,8 +293,17 @@ impl Drop for ServerGuard {
         let mut servers_lock = self.servers.lock().unwrap();
         if let Some(server) = servers_lock.get_mut(&self.key) {
             server.state.busy = false;
-            if matches!(server.state.failure_record, FailureRecord::Reliable) {
-                println!("🟢 Server {} now available", self.key);
+            match server.state.failure_record {
+                FailureRecord::Reliable => {
+                    println!("🟢 Server {} now available", self.key);
+                },
+                FailureRecord::Unreliable => {
+                    println!("⚠️ Server {} now available but still not reliable", self.key);
+                },
+                FailureRecord::SecondChanceGiven => {
+                    // If failure_record == SecondChanceGiven that means an error message has already been printed
+                    // so this error message would be confusing indeed.
+                },
             }
         }
     }
