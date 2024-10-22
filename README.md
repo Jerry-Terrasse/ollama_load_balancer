@@ -38,6 +38,9 @@ https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_00_2024_10_2
 
 2. Run in Powershell, CMD, or terminal. Make sure to [allow access to both public and private networks](./doc/screenshots/allow_access_to_public_and_private_networks.png) during the first time running the utility.
 ```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
 C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434
 
 📒 Ollama servers list:
@@ -45,61 +48,23 @@ C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134
 2. http://192.168.150.135:11434
 3. http://192.168.150.136:11434
 
-⚙️ Timeout setting: Will abandon Ollama server after 30 seconds of silence
+⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
 
 👂 Ollama Load Balancer listening on http://0.0.0.0:11434
 
-🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:59527
-🤖🦸 Chose reliable server: http://192.168.150.135:11434 to serve client 127.0.0.1:59529
-🤖🦸 Chose reliable server: http://192.168.150.136:11434 to serve client 127.0.0.1:59531
-🤷 No available servers to serve client 127.0.0.1:59533
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64198
+🤖🦸 Chose reliable server: http://192.168.150.135:11434 to serve client 127.0.0.1:64200
+🤖🦸 Chose reliable server: http://192.168.150.136:11434 to serve client 127.0.0.1:64203
+🤷 No available servers to serve client 127.0.0.1:64210
+🟢 Server http://192.168.150.134:11434 now available
 🟢 Server http://192.168.150.136:11434 now available
 🟢 Server http://192.168.150.135:11434 now available
-🟢 Server http://192.168.150.134:11434 now available
-🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:59564
-🤖🦸 Chose reliable server: http://192.168.150.135:11434 to serve client 127.0.0.1:59566
-⛔😱 Server http://192.168.150.135:11434 has failed, now marked unreliable. Error: error sending request for url (http://192.168.150.135:11434/api/chat)
-🟢 Server http://192.168.150.135:11434 now available
-🤖🦸 Chose reliable server: http://192.168.150.136:11434 to serve client 127.0.0.1:59569
-⛔😱 Server http://192.168.150.136:11434 has failed, now marked unreliable. Error: error sending request for url (http://192.168.150.136:11434/api/chat)
-🟢 Server http://192.168.150.136:11434 now available
-⛔😱 Server http://192.168.150.134:11434 has failed during streaming, now marked unreliable. Error: error decoding response body
-🟢 Server http://192.168.150.134:11434 now available
-🤖😇 Giving server http://192.168.150.134:11434 another chance with client 127.0.0.1:59573
-⛔😞 Server http://192.168.150.134:11434 has failed again. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
-🟢 Server http://192.168.150.134:11434 now available
-🤖😇 Giving server http://192.168.150.135:11434 another chance with client 127.0.0.1:59577
-⛔😞 Server http://192.168.150.135:11434 has failed again. Error: error sending request for url (http://192.168.150.135:11434/api/chat)
-🟢 Server http://192.168.150.135:11434 now available
-🤖😇 Giving server http://192.168.150.136:11434 another chance with client 127.0.0.1:59580
-⛔😞 Server http://192.168.150.136:11434 has failed again. Error: error sending request for url (http://192.168.150.136:11434/api/chat)
-🟢 Server http://192.168.150.136:11434 now available
-🤖😇 Giving server http://192.168.150.134:11434 a 3rd+ chance with client 127.0.0.1:59590
-⛔😞 Server http://192.168.150.134:11434 has failed again. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
-🟢 Server http://192.168.150.134:11434 now available
-🤖😇 Giving server http://192.168.150.135:11434 another chance with client 127.0.0.1:59593
-⛔😞 Server http://192.168.150.135:11434 has failed again. Error: error sending request for url (http://192.168.150.135:11434/api/chat)
-🟢 Server http://192.168.150.135:11434 now available
-🤖😇 Giving server http://192.168.150.136:11434 another chance with client 127.0.0.1:59595
-🙏⚕️ Server http://192.168.150.136:11434 has recovered and is now marked Reliable
 ☠️  Received CTRL+C, shutting down gracefully...
-🟢 Server http://192.168.150.136:11434 now available
 
 C:\Users\user\Downloads>
 ```
 
-Explanation of the above example:
-1. We set up 4 VS Code instances (to simulate users) and turn on 3 Ollama servers. We first quickly request LLM chat completion from all four users- Three manage, but the fourth causes: `🤷 No available servers to serve client 127.0.0.1:59533`.
-
-2. We turn off the Ollama servers (except for `192.168.150.134`), then prompt 3 times- 2 of the servers immediately fail, then when still generating the VM running `192.168.150.134` was paused, which caused `http://192.168.150.134:11434 has failed during streaming` after the `--timeout` value (default of 30 seconds). Ultimately all three servers are marked "unreliable".
-
-3. Ollama servers still off, we prompt 3 times again- all of which fail. All three servers are marked "SecondChanceGiven" (which is lower priority than "unreliable").
-
-4. We once prompt again, `192.168.150.134` gets a `3rd+ chance`, it fails of course. But since all unreliable servers are marked `SecondChanceGiven`, that score has no meaning anymore, so we upgrade them all to `unreliable` once again.
-
-4. We turn back on only server `192.168.150.136`, and prompt twice. `192.168.150.135` fails and then `192.168.150.136` finally `🙏⚕️ Server http://192.168.150.136:11434 has recovered`, the rest are still failing. "Recovered" means that `192.168.150.136` will definitely be chosen during every upcoming prompting, until it either fails or is busy.
-
-5. We press CTRL+C, but server `192.168.150.136` is still generating so the exit is delayed.
+In this example, we set up 4 VS Code instances (to simulate users) and turn on 3 Ollama servers. We first quickly request LLM chat completion from all four users- Three manage, but the fourth causes: `🤷 No available servers to serve client`
 
 ## Purpose
 A single Ollama server can (and should) only serve one request at the same time.
@@ -207,6 +172,288 @@ These are the versions I used:
     }
     ```
 7. Open multiple instances of VS Code to prompt the LLM concurrently and test-out the load balancer.
+
+## Edge Cases
+### VM running Ollama crashes while generating- timeout 30 seconds (default)
+```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434
+
+📒 Ollama servers list:
+1. http://192.168.150.134:11434
+
+⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64266
+⛔😱 Server http://192.168.150.134:11434 failed during streaming, now marked Unreliable. Error: error decoding response body
+⚠️  Connection closed with Unreliable Server http://192.168.150.134:11434
+☠️  Received CTRL+C, shutting down gracefully...
+
+C:\Users\user\Downloads>
+```
+
+### PC running Ollama server was off (hard-coded 1 second initial-connection timeout)
+```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434
+
+📒 Ollama servers list:
+1. http://192.168.150.134:11434
+
+⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64288
+⛔😱 Server http://192.168.150.134:11434 didn't respond, now marked Unreliable. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
+⚠️  Connection closed with Unreliable Server http://192.168.150.134:11434
+☠️  Received CTRL+C, shutting down gracefully...
+
+C:\Users\user\Downloads>
+```
+
+### All three servers are off, until 192.168.150.134 is turned back on- but then fails during streaming
+```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434
+
+📒 Ollama servers list:
+1. http://192.168.150.134:11434
+2. http://192.168.150.135:11434
+3. http://192.168.150.136:11434
+
+⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64308
+⛔😱 Server http://192.168.150.134:11434 didn't respond, now marked Unreliable. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
+⚠️  Connection closed with Unreliable Server http://192.168.150.134:11434
+🤖🦸 Chose reliable server: http://192.168.150.135:11434 to serve client 127.0.0.1:64310
+⛔😱 Server http://192.168.150.135:11434 didn't respond, now marked Unreliable. Error: error sending request for url (http://192.168.150.135:11434/api/chat)
+⚠️  Connection closed with Unreliable Server http://192.168.150.135:11434
+🤖🦸 Chose reliable server: http://192.168.150.136:11434 to serve client 127.0.0.1:64312
+⛔😱 Server http://192.168.150.136:11434 didn't respond, now marked Unreliable. Error: error sending request for url (http://192.168.150.136:11434/api/chat)
+⚠️  Connection closed with Unreliable Server http://192.168.150.136:11434
+🤖😇 Giving server http://192.168.150.134:11434 another chance with client 127.0.0.1:64315
+⛔😞 Unreliable server http://192.168.150.134:11434 didn't respond. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
+⚠️  Connection closed with Unreliable Server http://192.168.150.134:11434
+🤖😇 Giving server http://192.168.150.135:11434 another chance with client 127.0.0.1:64317
+⛔😞 Unreliable server http://192.168.150.135:11434 didn't respond. Error: error sending request for url (http://192.168.150.135:11434/api/chat)
+⚠️  Connection closed with Unreliable Server http://192.168.150.135:11434
+🤖😇 Giving server http://192.168.150.136:11434 another chance with client 127.0.0.1:64319
+⛔😞 Unreliable server http://192.168.150.136:11434 didn't respond. Error: error sending request for url (http://192.168.150.136:11434/api/chat)
+⚠️  Connection closed with Unreliable Server http://192.168.150.136:11434
+🤖😇 Giving server http://192.168.150.134:11434 a 3rd+ chance with client 127.0.0.1:64325
+⛔😞 Unreliable server http://192.168.150.134:11434 failed during streaming. Error: error decoding response body
+⚠️  Connection closed with Unreliable Server http://192.168.150.134:11434
+☠️  Received CTRL+C, shutting down gracefully...
+
+C:\Users\user\Downloads>
+```
+
+### A server fails twice, then succeeds twice
+```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434
+
+📒 Ollama servers list:
+1. http://192.168.150.134:11434
+
+⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64355
+⛔😱 Server http://192.168.150.134:11434 didn't respond, now marked Unreliable. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
+⚠️  Connection closed with Unreliable Server http://192.168.150.134:11434
+🤖😇 Giving server http://192.168.150.134:11434 another chance with client 127.0.0.1:64358
+⛔😞 Unreliable server http://192.168.150.134:11434 didn't respond. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
+⚠️  Connection closed with Unreliable Server http://192.168.150.134:11434
+🤖😇 Giving server http://192.168.150.134:11434 a 3rd+ chance with client 127.0.0.1:64365
+🙏⚕️  Server http://192.168.150.134:11434 has completed streaming successfully and is now marked Reliable
+🟢 Server http://192.168.150.134:11434 now available
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64378
+🟢 Server http://192.168.150.134:11434 now available
+☠️  Received CTRL+C, shutting down gracefully...
+
+C:\Users\user\Downloads>
+```
+
+### Generation canceled by continue.dev- not an error
+```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434
+
+📒 Ollama servers list:
+1. http://192.168.150.134:11434
+
+⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64417
+🟢 Server http://192.168.150.134:11434 now available
+☠️  Received CTRL+C, shutting down gracefully...
+
+C:\Users\user\Downloads>
+```
+
+### Generation canceled by continue.dev while using unreliable server- streaming did not complete successfully so not enough to mark Reliable, but not to report error either
+```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434
+
+📒 Ollama servers list:
+1. http://192.168.150.134:11434
+
+⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64428
+⛔😱 Server http://192.168.150.134:11434 didn't respond, now marked Unreliable. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
+⚠️  Connection closed with Unreliable Server http://192.168.150.134:11434
+🤖😇 Giving server http://192.168.150.134:11434 another chance with client 127.0.0.1:64431
+⚠️  Connection closed with Unreliable Server http://192.168.150.134:11434
+☠️  Received CTRL+C, shutting down gracefully...
+
+C:\Users\user\Downloads>
+```
+
+### CTRL+C waits for as long as needed until generation is done in all open connections
+```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434
+
+📒 Ollama servers list:
+1. http://192.168.150.134:11434
+
+⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64441
+☠️  Received CTRL+C, shutting down gracefully...
+🟢 Server http://192.168.150.134:11434 now available
+
+C:\Users\user\Downloads>
+```
+
+### First server was off, second server was on. First server marked as unreliable, so for every next generation, the second server is chosen again and again
+```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434 --server http://192.168.150.135:11434
+
+📒 Ollama servers list:
+1. http://192.168.150.134:11434
+2. http://192.168.150.135:11434
+
+⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64459
+⛔😱 Server http://192.168.150.134:11434 didn't respond, now marked Unreliable. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
+⚠️  Connection closed with Unreliable Server http://192.168.150.134:11434
+🤖🦸 Chose reliable server: http://192.168.150.135:11434 to serve client 127.0.0.1:64462
+🟢 Server http://192.168.150.135:11434 now available
+🤖🦸 Chose reliable server: http://192.168.150.135:11434 to serve client 127.0.0.1:64474
+🟢 Server http://192.168.150.135:11434 now available
+🤖🦸 Chose reliable server: http://192.168.150.135:11434 to serve client 127.0.0.1:64477
+🟢 Server http://192.168.150.135:11434 now available
+☠️  Received CTRL+C, shutting down gracefully...
+
+C:\Users\user\Downloads>
+```
+
+### Nothing ever goes wrong, all requests are single file- so first server is always chosen
+```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434 --server http://192.168.150.135:11434
+
+📒 Ollama servers list:
+1. http://192.168.150.134:11434
+2. http://192.168.150.135:11434
+
+⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64510
+🟢 Server http://192.168.150.134:11434 now available
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64513
+🟢 Server http://192.168.150.134:11434 now available
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64516
+🟢 Server http://192.168.150.134:11434 now available
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64518
+🟢 Server http://192.168.150.134:11434 now available
+☠️  Received CTRL+C, shutting down gracefully...
+
+C:\Users\user\Downloads>
+```
+
+### Nonsensical server IP + port doesn't crash utility
+```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
+C:\Users\user\Downloads>ollama_load_balancer.exe --server aksldjflakje
+
+📒 Ollama servers list:
+1. aksldjflakje
+
+⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+
+🤖🦸 Chose reliable server: aksldjflakje to serve client 127.0.0.1:64530
+⛔😱 Server aksldjflakje didn't respond, now marked Unreliable. Error: builder error
+⚠️  Connection closed with Unreliable Server aksldjflakje
+☠️  Received CTRL+C, shutting down gracefully...
+
+C:\Users\user\Downloads>
+```
+
+### Set timeout to infinity and pause VM running Ollama server during generation- we will be stuck forever now (or until somebody unpauses the VM)
+
+```sh
+C:\Users\user\Downloads>ollama_load_balancer.exe --version
+ollama_load_balancer 1.0.1
+
+C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434 --timeout 0
+
+📒 Ollama servers list:
+1. http://192.168.150.134:11434
+
+⚙️  Timeout setting: Will abandon Ollama server after 0 seconds of silence
+
+👂 Ollama Load Balancer listening on http://0.0.0.0:11434
+
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64565
+☠️  Received CTRL+C, shutting down gracefully...
+
+```
 
 ## Research
 
