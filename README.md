@@ -3,6 +3,26 @@ Rust utility that load balances multiple https://ollama.com/ servers
 
 ![project logo small](./doc/logo/logo_small.png)
 
+## Release Notes
+### 1.0.0
+https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_00_2024_10_22/release/ollama_load_balancer.exe
+
+**Features:**
+- Standalone command-line executable for Windows 10/11 with app icon, linked with MSVC 64-bit toolchain
+- Tested on `Windows 11 Pro 23H2`
+- Source code is cross platform- compile works on Ubuntu 22.04
+- Load balancing implemented
+- Streaming HTTP POST request handled by utility
+- Robust error handling- edge cases managed
+- Well-documented
+- Easy-to-read emoji logs to console
+- Configurable timeout via command line argument
+- Configurable Ollama servers `IP:PORT` list via command line arguments
+- Stateless- no saved state between executable runs, no configuration files- all CLI
+- Supports any REST server based on `HTTP POST` requests, not just Ollama.
+- Optimized for immediate response to user- avoid user needing to wait
+- Ideal server-ranking implementation for performance-identical Ollama servers in chaotic environment where they can be turned on and off on a whim.
+
 ## Usage
 1. Install Rust using Rustup
 
