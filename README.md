@@ -35,13 +35,13 @@ C:\Users\rzyro\Downloads\ollama_load_balancer>cargo run -- --server http://192.1
 🟢 Server http://192.168.150.134:11434 now available
 🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:59564
 🤖🦸 Chose reliable server: http://192.168.150.135:11434 to serve client 127.0.0.1:59566
-⛔😱 Server http://192.168.150.134:11434 has failed, now marked unreliable. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
-🟢 Server http://192.168.150.134:11434 now available
 ⛔😱 Server http://192.168.150.135:11434 has failed, now marked unreliable. Error: error sending request for url (http://192.168.150.135:11434/api/chat)
 🟢 Server http://192.168.150.135:11434 now available
 🤖🦸 Chose reliable server: http://192.168.150.136:11434 to serve client 127.0.0.1:59569
 ⛔😱 Server http://192.168.150.136:11434 has failed, now marked unreliable. Error: error sending request for url (http://192.168.150.136:11434/api/chat)
 🟢 Server http://192.168.150.136:11434 now available
+⛔😱 Server http://192.168.150.134:11434 has failed during streaming, now marked unreliable. Error: error decoding response body
+🟢 Server http://192.168.150.134:11434 now available
 🤖😇 Giving server http://192.168.150.134:11434 another chance with client 127.0.0.1:59573
 ⛔😞 Server http://192.168.150.134:11434 has failed again. Error: error sending request for url (http://192.168.150.134:11434/api/chat)
 🟢 Server http://192.168.150.134:11434 now available
@@ -68,7 +68,7 @@ C:\Users\rzyro\Downloads\ollama_load_balancer>
 Explanation of the above example:
 1. We set up 4 VS Code instances (to simulate users) and turn on 3 Ollama servers. We first quickly request LLM chat completion from all four users- Three manage, but the fourth causes: `🤷 No available servers to serve client 127.0.0.1:59533`.
 
-2. We turn off the Ollama servers, then prompt 3 times- all of which fail. All three servers are marked "unreliable".
+2. We turn off the Ollama servers (except for `192.168.150.134`), then prompt 3 times- 2 of the servers immediately fail, then when still generating the VM running `192.168.150.134` was paused, which caused `http://192.168.150.134:11434 has failed during streaming` after the `--timeout` value (default of 30 seconds). Ultimately all three servers are marked "unreliable".
 
 3. Ollama servers still off, we prompt 3 times again- all of which fail. All three servers are marked "SecondChanceGiven" (which is lower priority than "unreliable").
 
@@ -106,8 +106,6 @@ Streaming is implemented using `Newline Delimited JSON format` (ndjson). See `Co
 Each line of the ndjson format is mapped to one object in a JSON array.
 
 ## TODOs
-- Fix bug- Pause VM running Ollama while generating a response- causes premature close error, but it's not registered as an error for Ollama server punishment purposes.
-
 - Test with "stream: false" https://github.com/ollama/ollama/pull/639
 
 ## Dependencies

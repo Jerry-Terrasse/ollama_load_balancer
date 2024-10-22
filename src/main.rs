@@ -194,7 +194,8 @@ async fn handle_request(
                 let resp_body = ResponseBodyWithGuard {
                     stream: response.bytes_stream(),
                     _guard,
-                };
+                    server: server.clone(),
+                };                
                 
                 // Convert our custom stream to hyper::Body
                 let hyper_body = Body::wrap_stream(resp_body);
@@ -209,10 +210,10 @@ async fn handle_request(
                     // Sever just failed our request, it's obviously not Reliable
                     if matches!(state.failure_record, FailureRecord::Reliable) {
                         state.failure_record = FailureRecord::Unreliable;
-                        println!("⛔😱 Server {} has failed, now marked unreliable. Error: {}", server.address, e);
+                        println!("⛔😱 Server {} didn't respond, now marked unreliable. Error: {}", server.address, e);
                     }
                     else {
-                        println!("⛔😞 Server {} has failed again. Error: {}", server.address, e);
+                        println!("⛔😞 Server {} again didn't respond. Error: {}", server.address, e);
                     }
                 }
                 
@@ -300,6 +301,7 @@ impl Drop for ServerGuard {
 struct ResponseBodyWithGuard<S> {
     stream: S,
     _guard: ServerGuard,
+    server: Arc<OllamaServer>,
 }
 
 impl<S> Stream for ResponseBodyWithGuard<S>
@@ -315,7 +317,21 @@ where
         let stream = Pin::new(&mut self.stream);
         match stream.poll_next(cx) {
             Poll::Ready(Some(Ok(bytes))) => Poll::Ready(Some(Ok(bytes))),
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(std::io::Error::new(std::io::ErrorKind::Other, e)))),
+            Poll::Ready(Some(Err(e))) => {
+                // An error occurred during streaming
+                // Update the server's state to mark it as unreliable
+                {
+                    let mut state = self.server.state.lock().unwrap();
+                    if matches!(state.failure_record, FailureRecord::Reliable) {
+                        state.failure_record = FailureRecord::Unreliable;
+                        println!("⛔😱 Server {} has failed during streaming, now marked unreliable. Error: {}", self.server.address, e);
+                    } else {
+                        println!("⛔😞 Server {} has failed again during streaming. Error: {}", self.server.address, e);
+                    }
+                }
+                // Return the error to the client
+                Poll::Ready(Some(Err(std::io::Error::new(std::io::ErrorKind::Other, e))))
+            },
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
         }
