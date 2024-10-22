@@ -105,9 +105,6 @@ Streaming is implemented using `Newline Delimited JSON format` (ndjson). See `Co
 
 Each line of the ndjson format is mapped to one object in a JSON array.
 
-## TODOs
-- Test with "stream: false" https://github.com/ollama/ollama/pull/639
-
 ## Dependencies
 These are the versions I used:
 
