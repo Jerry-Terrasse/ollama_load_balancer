@@ -4,6 +4,13 @@ Rust utility that load balances multiple https://ollama.com/ servers
 ![project logo small](./doc/logo/logo_small.png)
 
 ## Release Notes
+### 1.0.1
+https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_01_2024_10_22/release/ollama_load_balancer.exe
+
+**Changes:**
+- Code: Refactor- Use server "ADDRESS:PORT" as key to data structure holding the state of all servers, instead of holding Arc reference to specific server, this avoids needing multiple locks, improves performance, and fixes logical race condition caused by multiple locks.
+- Doc: Optimize documentation for end-users
+
 ### 1.0.0
 https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_00_2024_10_22/release/ollama_load_balancer.exe
 
@@ -133,19 +140,19 @@ Question is: how do we choose from multiple possible `Unreliable` servers? How d
 That's what `SecondChanceGiven` is for. It's a state that we can flip to ensure that we cycle through all `Unreliable` servers evenly, avoiding the situation where we try a single `Unreliable` server twice to no avail while ignoring the other (possibly good) servers.
 
 ## Supported Usages
-We support not only `continue.dev` but also any client that streams responses from an Ollama server such as https://openwebui.com/
+We support `continue.dev` and also any client that streams responses from an Ollama server such as https://openwebui.com/
 
-We support both `/api/chat` and `/api/generate` (CTRL+i in `continue.dev`), and actually we support any POST request that is based on streaming with `Transfer-Encoding: chunked` and `Content-Type: application/x-ndjson`.
+We support `/api/chat`, `/api/generate` (CTRL+i in `continue.dev`), `/api/show`, and actually we support any POST request. We support streaming based on `Transfer-Encoding: chunked` and `Content-Type: application/x-ndjson`.
+
+Static HTTP is also supported with `stream: false` in JSON given in POST request to Ollama.
 
 ## Streaming
 
 The LLM doesn't have the complete response immediately which is why Ollama streams the completions.
 
-Streaming is implemented using `Newline Delimited JSON format` (ndjson). See `Content-Type: application/x-ndjson`.
+Streaming is implemented using `Newline Delimited JSON format` (ndjson). See `Content-Type: application/x-ndjson`, although this format is not hard-coded in the load balancer.
 
 Each line of the ndjson format is mapped to one object in a JSON array.
-
-Static HTTP is also supported (`stream: false` in JSON given in POST request to Ollama).
 
 ## Dependencies
 These are the versions I used:
