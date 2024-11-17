@@ -4,6 +4,13 @@ Autonomous Rust utility that load balances multiple https://ollama.com/ servers
 ![project logo small](./doc/logo/logo_small.png)
 
 ## Release Notes
+### 1.0.2
+https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_02_2024_11_17/release/ollama_load_balancer.exe
+
+**Changes:**
+- Fix: Support any HTTP request type in addition to `POST`. This includes `GET`, `POST`, `PUT`, `DELETE`, `HEAD`, `OPTIONS`, `PATCH`, `TRACE`.\
+The https://openwebui.com/ server was trying to use `GET /api/tags` so this feature is required for openwebui servers to agree to use this load balancer.
+
 ### 1.0.1
 https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_01_2024_10_22/release/ollama_load_balancer.exe
 

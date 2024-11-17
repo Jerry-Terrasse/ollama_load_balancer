@@ -4,7 +4,9 @@
 import requests
 
 # URL of the load balancer
-url = 'http://127.0.0.1:11434/api/chat'
+base_url = "http://127.0.0.1:11434"
+
+post_url = f'{base_url}/api/chat'
 
 # Headers for the HTTP request
 headers = {
@@ -31,7 +33,18 @@ json_data = {
 }
 
 # Send the POST request to the load balancer
-response = requests.post(url, headers=headers, json=json_data)
+response = requests.post(post_url, headers=headers, json=json_data)
+
+# Print the response status code, headers, and body
+print("Status Code:", response.status_code)
+print("Headers:", response.headers)
+print("Response Body:", response.text)
+
+# URL of the Ollama server
+get_url = f'{base_url}/api/tags'
+
+# Send the GET request to the Ollama server
+response = requests.get(get_url)
 
 # Print the response status code, headers, and body
 print("Status Code:", response.status_code)

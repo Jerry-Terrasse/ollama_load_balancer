@@ -689,7 +689,7 @@ dependencies = [
 
 [[package]]
 name = "ollama_load_balancer"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "bytes",
  "clap",

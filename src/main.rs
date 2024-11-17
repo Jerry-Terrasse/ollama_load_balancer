@@ -121,13 +121,15 @@ async fn handle_request(
     remote_addr: std::net::SocketAddr,
     timeout_secs: u32,
 ) -> Result<Response<Body>, Infallible> {
-    // Only handle POST requests
-    if req.method() != hyper::Method::POST {
-        return Ok(Response::builder()
-            .status(StatusCode::METHOD_NOT_ALLOWED)
-            .body(Body::from("Only POST requests are allowed"))
-            .unwrap());
-    }
+    let reqwest_method = match hyper_method_to_reqwest_method(req.method().clone()) {
+        Ok(method) => method,
+        Err(e) => {
+            return Ok(Response::builder()
+                .status(StatusCode::METHOD_NOT_ALLOWED)
+                .body(Body::from(format!("hyper_method_to_reqwest_method failed: {}", e)))
+                .unwrap());
+        }
+    };
 
     // Get the path
     let path = req.uri().path();
@@ -159,7 +161,7 @@ async fn handle_request(
             builder = builder.read_timeout(timeout).pool_idle_timeout(timeout);
         }
         let client = builder.build().unwrap();
-        let mut request_builder = client.request(reqwest::Method::POST, &uri);
+        let mut request_builder = client.request(reqwest_method, &uri);
 
         // Copy headers
         for (key, value) in req.headers() {
@@ -361,4 +363,11 @@ where
             Poll::Pending => Poll::Pending,
         }
     }
+}
+
+// Required because two different versions of crate `http` are being used
+// reqwest is a new version, hyper is an old version and the new API is completely
+// different so for now I chose to stay with the old version of hyper.
+fn hyper_method_to_reqwest_method(method: hyper::Method) -> Result<reqwest::Method, Box<dyn std::error::Error>> {
+    return Ok(method.as_str().parse::<reqwest::Method>()?);
 }
