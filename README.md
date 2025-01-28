@@ -6,7 +6,7 @@ Autonomous Rust utility that load balances multiple https://ollama.com/ servers
 ## Release Notes
 
 ### 1.0.3
-https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_03_2025_XX_XX/release
+https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_03_2025_01_28/release
 
 **Changes:**
 - Print activity status list of all servers every time something changes
