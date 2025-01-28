@@ -9,20 +9,45 @@ use std::task::{Context, Poll};
 use clap::Parser;
 use ordermap::OrderMap;
 
+/// Struct to hold the user-supplied server address and its human-readable name.
+/// Format on the command line should be:  ip:port=Name
+#[derive(Debug, Clone)]
+struct ServerConfig {
+    address: String,
+    name: String,
+}
+
+impl std::str::FromStr for ServerConfig {
+    type Err = String;
+
+    /// We expect the user to provide something like "127.0.0.1:11433=LocalOllama"
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.splitn(2, '=').collect();
+        if parts.len() != 2 {
+            return Err("Invalid server format. Use ip:port=Name".to_string());
+        }
+        Ok(ServerConfig {
+            address: parts[0].trim().to_string(),
+            name: parts[1].trim().to_string(),
+        })
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Syntax is --server IP:PORT --server IP:PORT --server IP:PORT ...
+    /// Syntax is --server IP:PORT=NAME --server IP:PORT=NAME ...
     ///
-    /// This is a required argument. It specifies the addresses of the Ollama servers that the load balancer will distribute requests to.
+    /// This is a required argument. It specifies the addresses of the Ollama servers
+    /// that the load balancer will distribute requests to, plus a friendly name.
     #[arg(short, long, required = true)]
-    server: Vec<String>,
+    server: Vec<ServerConfig>,
 
     /// Max seconds to allow Ollama server to pause.
     ///
     /// Don't set this too low because if the delay is too great at the beginning of response generation that will cause failure.
     /// Pass 0 to disable timeout.
-    ///
+    /// 
     /// This is an optional argument. It specifies the maximum number of seconds to wait for a response from the Ollama server before considering it unavailable
     #[arg(short, long, default_value_t = 30)]
     timeout: u32,
@@ -44,6 +69,7 @@ struct ServerState {
 #[derive(Debug)]
 struct OllamaServer {
     state: ServerState,
+    name: String,
 }
 
 type SharedServerList = Arc<Mutex<OrderMap<String, OllamaServer>>>;
@@ -53,7 +79,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let mut servers_map = OrderMap::new();
-    for address in args.server {
+    for config in args.server {
+        let address = config.address.clone();
+        let name = config.name.clone();
+
         if servers_map.contains_key(&address) {
             return Err(format!("Duplicate server address found: {}", address).into());
         }
@@ -62,13 +91,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 busy: false,
                 failure_record: FailureRecord::Reliable,
             },
+            name,
         });
     }
 
     println!("");
     println!("📒 Ollama servers list:");
-    for (index, kvp) in servers_map.iter().enumerate() {
-        println!("{}. {}", index + 1, kvp.0);
+    for (index, (addr, srv)) in servers_map.iter().enumerate() {
+        println!("{}. {} ({})", index + 1, addr, srv.name);
     }
     println!("");
     println!("⚙️  Timeout setting: Will abandon Ollama server after {} seconds of silence", args.timeout);
@@ -164,8 +194,8 @@ async fn handle_request(
         let mut request_builder = client.request(reqwest_method, &uri);
 
         // Copy headers
-        for (key, value) in req.headers() {
-            request_builder = request_builder.header(key.as_str(), value.as_bytes());
+        for (key_h, value) in req.headers() {
+            request_builder = request_builder.header(key_h.as_str(), value.as_bytes());
         }
 
         // Set up streaming body
@@ -185,8 +215,8 @@ async fn handle_request(
                 let mut resp_builder = Response::builder().status(u16::from(status));
 
                 // Copy headers
-                for (key, value) in response.headers() {
-                    resp_builder = resp_builder.header(key.to_string(), value.to_str().unwrap());
+                for (key_h, value) in response.headers() {
+                    resp_builder = resp_builder.header(key_h.to_string(), value.to_str().unwrap());
                 }
 
                 // Wrap the response body stream with our custom stream.
@@ -213,12 +243,13 @@ async fn handle_request(
                     if let Some(server) = servers_lock.get_mut(&key) {
                         if matches!(server.state.failure_record, FailureRecord::Reliable) {
                             server.state.failure_record = FailureRecord::Unreliable;
-                            println!("⛔😱 Server {} didn't respond, now marked Unreliable. Error: {}", key, e);
+                            println!("⛔😱 Server {} ({}) didn't respond, now marked Unreliable. Error: {}", key, server.name, e);
                         }
                         else {
                             server.state.failure_record = FailureRecord::SecondChanceGiven;
-                            println!("⛔😞 Unreliable server {} didn't respond. Error: {}", key, e);
+                            println!("⛔😞 Unreliable server {} ({}) didn't respond. Error: {}", key, server.name, e);
                         }
+                        print_server_statuses(&servers_lock);
                     }
                 }
 
@@ -232,6 +263,11 @@ async fn handle_request(
         }
     } else {
         println!("🤷 No available servers to serve client {}", remote_addr);
+        {
+            // Print server statuses after failure to find a server
+            let servers_lock = servers.lock().unwrap();
+            print_server_statuses(&servers_lock);
+        }
         let response = Response::builder()
             .status(StatusCode::SERVICE_UNAVAILABLE)
             .body(Body::from("No available servers"))
@@ -243,46 +279,56 @@ async fn handle_request(
 async fn select_available_server(servers: &SharedServerList, remote_addr: &std::net::SocketAddr) -> Option<String> {
     let mut servers_lock = servers.lock().unwrap();
 
-    // 1st choice: Find an available reliable server
-    for (key, server) in servers_lock.iter_mut() {
-        if matches!(server.state.failure_record, FailureRecord::Reliable) && !server.state.busy {
-            server.state.busy = true;
-            println!("🤖🦸 Chose reliable server: {} to serve client {}", key, remote_addr);
-            return Some(key.clone());
+    // Define the closure to encapsulate server selection logic
+    let mut select_server = || {
+        // 1st choice: Find an available reliable server
+        for (key, server) in servers_lock.iter_mut() {
+            if matches!(server.state.failure_record, FailureRecord::Reliable) && !server.state.busy {
+                server.state.busy = true;
+                println!("🤖🦸 Chose reliable server: {} ({}) to serve client {}", key, server.name, remote_addr);
+                return Some(key.clone());
+            }
         }
-    }
 
-    // 2nd choice: If no reliable servers are available, select an untrusted available server that has
-    // only failed once in a row.
-    for (key, server) in servers_lock.iter_mut() {
-        if matches!(server.state.failure_record, FailureRecord::Unreliable) && !server.state.busy {
-            server.state.busy = true;
-            println!("🤖😇 Giving server {} another chance with client {}", key, remote_addr);
-            return Some(key.clone());
+        // 2nd choice: If no reliable servers are available, select an untrusted available server that has
+        // only failed once in a row.
+        for (key, server) in servers_lock.iter_mut() {
+            if matches!(server.state.failure_record, FailureRecord::Unreliable) && !server.state.busy {
+                server.state.busy = true;
+                println!("🤖😇 Giving server {} ({}) another chance with client {}", key, server.name, remote_addr);
+                return Some(key.clone());
+            }
         }
-    }
 
-    // If all untrusted available servers have been given a second chance,
-    // reset the SecondChanceGiven mark so that we can again cycle through the untrusted servers-
-    // This ensures that we cycle equally through all untrusted servers- give everyone
-    // their chance
-    for server in servers_lock.values_mut() {
-        if matches!(server.state.failure_record, FailureRecord::SecondChanceGiven) && !server.state.busy {
-            server.state.failure_record = FailureRecord::Unreliable;
+        // If all untrusted available servers have been given a second chance,
+        // reset the SecondChanceGiven mark so that we can again cycle through the untrusted servers-
+        // This ensures that we cycle equally through all untrusted servers- give everyone
+        // their chance
+        for server in servers_lock.values_mut() {
+            if matches!(server.state.failure_record, FailureRecord::SecondChanceGiven) && !server.state.busy {
+                server.state.failure_record = FailureRecord::Unreliable;
+            }
         }
-    }
 
-    // 3rd choice: Select any untrusted server, because we're out of options at this point
-    for (key, server) in servers_lock.iter_mut() {
-        if matches!(server.state.failure_record, FailureRecord::Unreliable) && !server.state.busy {
-            server.state.busy = true;
-            println!("🤖😇 Giving server {} a 3rd+ chance with client {}", key, remote_addr);
-            return Some(key.clone());
+        // 3rd choice: Select any untrusted server, because we're out of options at this point
+        for (key, server) in servers_lock.iter_mut() {
+            if matches!(server.state.failure_record, FailureRecord::Unreliable) && !server.state.busy {
+                server.state.busy = true;
+                println!("🤖😇 Giving server {} ({}) a 3rd+ chance with client {}", key, server.name, remote_addr);
+                return Some(key.clone());
+            }
         }
-    }
 
-    // No servers available
-    None
+        // No servers available
+        None
+    };
+
+    // Capture the result of the closure
+    let selected_server = select_server();
+
+    print_server_statuses(&servers_lock);
+
+    selected_server
 }
 
 struct ServerGuard {
@@ -296,11 +342,12 @@ impl Drop for ServerGuard {
         if let Some(server) = servers_lock.get_mut(&self.key) {
             server.state.busy = false;
             if matches!(server.state.failure_record, FailureRecord::Reliable) {
-                println!("🟢 Server {} now available", self.key);
+                println!("🟢 Server {} ({}) now available", self.key, server.name);
             }
             else {
-                println!("⚠️  Connection closed with Unreliable Server {}", self.key);
+                println!("⚠️  Connection closed with Unreliable Server {} ({})", self.key, server.name);
             }
+            print_server_statuses(&servers_lock);
         }
     }
 }
@@ -335,12 +382,13 @@ where
                     if let Some(server) = servers_lock.get_mut(&self.key) {
                         if matches!(server.state.failure_record, FailureRecord::Reliable) {
                             server.state.failure_record = FailureRecord::Unreliable;
-                            println!("⛔😱 Server {} failed during streaming, now marked Unreliable. Error: {}", self.key, e);
+                            println!("⛔😱 Server {} ({}) failed during streaming, now marked Unreliable. Error: {}", self.key, server.name, e);
                         }
                         else {
                             server.state.failure_record = FailureRecord::SecondChanceGiven;
-                            println!("⛔😞 Unreliable server {} failed during streaming. Error: {}", self.key, e);
+                            println!("⛔😞 Unreliable server {} ({}) failed during streaming. Error: {}", self.key, server.name, e);
                         }
+                        print_server_statuses(&servers_lock);
                     }
                 }
                 // Return the error to the client
@@ -354,7 +402,8 @@ where
                     if let Some(server) = servers_lock.get_mut(&self.key) {
                         if !matches!(server.state.failure_record, FailureRecord::Reliable) {
                             server.state.failure_record = FailureRecord::Reliable;
-                            println!("🙏⚕️  Server {} has completed streaming successfully and is now marked Reliable", self.key);
+                            println!("🙏⚕️  Server {} ({}) has completed streaming successfully and is now marked Reliable", self.key, server.name);
+                            print_server_statuses(&servers_lock);
                         }
                     }
                 }
@@ -370,4 +419,26 @@ where
 // different so for now I chose to stay with the old version of hyper.
 fn hyper_method_to_reqwest_method(method: hyper::Method) -> Result<reqwest::Method, Box<dyn std::error::Error>> {
     return Ok(method.as_str().parse::<reqwest::Method>()?);
+}
+
+/// Prints a nicely formatted list of the servers, their name, busy status, and reliability.
+fn print_server_statuses(servers: &OrderMap<String, OllamaServer>) {
+    println!("🗒  Current server statuses:");
+    for (i, (address, srv)) in servers.iter().enumerate() {
+        let busy_status = if srv.state.busy { "Busy" } else { "Available" };
+        let reliability = match srv.state.failure_record {
+            FailureRecord::Reliable => "Reliable",
+            FailureRecord::Unreliable => "Unreliable",
+            FailureRecord::SecondChanceGiven => "SecondChanceGiven",
+        };
+        println!(
+            "{}. Address: {} ({}), Busy: {}, Reliability: {}",
+            i + 1,
+            address,
+            srv.name,
+            busy_status,
+            reliability
+        );
+    }
+    println!("");
 }
