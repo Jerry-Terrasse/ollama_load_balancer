@@ -55,26 +55,66 @@ https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_00_2024_10_2
 2. Run in Powershell, CMD, or terminal. Make sure to [allow access to both public and private networks](./doc/screenshots/allow_access_to_public_and_private_networks.png) during the first time running the utility.
 ```sh
 C:\Users\user\Downloads>ollama_load_balancer.exe --version
-ollama_load_balancer 1.0.1
+ollama_load_balancer 1.0.3
 
-C:\Users\user\Downloads>ollama_load_balancer.exe --server http://192.168.150.134:11434 --server http://192.168.150.135:11434 --server http://192.168.150.136:11434
+C:\Users\user\Downloads>ollama_load_balancer.exe --server "http://192.168.150.134:11434=James' server" --server "http://192.168.150.135:11434=Sara's server" --server "http://192.168.150.136:11434=Mark's server"
 
 📒 Ollama servers list:
-1. http://192.168.150.134:11434
-2. http://192.168.150.135:11434
-3. http://192.168.150.136:11434
+1. http://192.168.150.134:11434 (James' server)
+2. http://192.168.150.135:11434 (Sara's server)
+3. http://192.168.150.136:11434 (Mark's server)
 
 ⚙️  Timeout setting: Will abandon Ollama server after 30 seconds of silence
 
 👂 Ollama Load Balancer listening on http://0.0.0.0:11434
 
-🤖🦸 Chose reliable server: http://192.168.150.134:11434 to serve client 127.0.0.1:64198
-🤖🦸 Chose reliable server: http://192.168.150.135:11434 to serve client 127.0.0.1:64200
-🤖🦸 Chose reliable server: http://192.168.150.136:11434 to serve client 127.0.0.1:64203
-🤷 No available servers to serve client 127.0.0.1:64210
-🟢 Server http://192.168.150.134:11434 now available
-🟢 Server http://192.168.150.136:11434 now available
-🟢 Server http://192.168.150.135:11434 now available
+🤖🦸 Chose reliable server: http://192.168.150.134:11434 (James' server) to serve client 127.0.0.1:54619
+🗒  Current server statuses:
+1. Address: http://192.168.150.134:11434 (James' server), Busy: Busy, Reliability: Reliable
+2. Address: http://192.168.150.135:11434 (Sara's server), Busy: Available, Reliability: Reliable
+3. Address: http://192.168.150.136:11434 (Mark's server), Busy: Available, Reliability: Reliable
+
+🤖🦸 Chose reliable server: http://192.168.150.135:11434 (Sara's server) to serve client 127.0.0.1:54621
+🗒  Current server statuses:
+1. Address: http://192.168.150.134:11434 (James' server), Busy: Busy, Reliability: Reliable
+2. Address: http://192.168.150.135:11434 (Sara's server), Busy: Busy, Reliability: Reliable
+3. Address: http://192.168.150.136:11434 (Mark's server), Busy: Available, Reliability: Reliable
+
+🤖🦸 Chose reliable server: http://192.168.150.136:11434 (Mark's server) to serve client 127.0.0.1:54623
+🗒  Current server statuses:
+1. Address: http://192.168.150.134:11434 (James' server), Busy: Busy, Reliability: Reliable
+2. Address: http://192.168.150.135:11434 (Sara's server), Busy: Busy, Reliability: Reliable
+3. Address: http://192.168.150.136:11434 (Mark's server), Busy: Busy, Reliability: Reliable
+
+🗒  Current server statuses:
+1. Address: http://192.168.150.134:11434 (James' server), Busy: Busy, Reliability: Reliable
+2. Address: http://192.168.150.135:11434 (Sara's server), Busy: Busy, Reliability: Reliable
+3. Address: http://192.168.150.136:11434 (Mark's server), Busy: Busy, Reliability: Reliable
+
+🤷 No available servers to serve client 127.0.0.1:54625
+🗒  Current server statuses:
+1. Address: http://192.168.150.134:11434 (James' server), Busy: Busy, Reliability: Reliable
+2. Address: http://192.168.150.135:11434 (Sara's server), Busy: Busy, Reliability: Reliable
+3. Address: http://192.168.150.136:11434 (Mark's server), Busy: Busy, Reliability: Reliable
+
+🟢 Server http://192.168.150.134:11434 (James' server) now available
+🗒  Current server statuses:
+1. Address: http://192.168.150.134:11434 (James' server), Busy: Available, Reliability: Reliable
+2. Address: http://192.168.150.135:11434 (Sara's server), Busy: Busy, Reliability: Reliable
+3. Address: http://192.168.150.136:11434 (Mark's server), Busy: Busy, Reliability: Reliable
+
+🟢 Server http://192.168.150.135:11434 (Sara's server) now available
+🗒  Current server statuses:
+1. Address: http://192.168.150.134:11434 (James' server), Busy: Available, Reliability: Reliable
+2. Address: http://192.168.150.135:11434 (Sara's server), Busy: Available, Reliability: Reliable
+3. Address: http://192.168.150.136:11434 (Mark's server), Busy: Busy, Reliability: Reliable
+
+🟢 Server http://192.168.150.136:11434 (Mark's server) now available
+🗒  Current server statuses:
+1. Address: http://192.168.150.134:11434 (James' server), Busy: Available, Reliability: Reliable
+2. Address: http://192.168.150.135:11434 (Sara's server), Busy: Available, Reliability: Reliable
+3. Address: http://192.168.150.136:11434 (Mark's server), Busy: Available, Reliability: Reliable
+
 ☠️  Received CTRL+C, shutting down gracefully...
 
 C:\Users\user\Downloads>
