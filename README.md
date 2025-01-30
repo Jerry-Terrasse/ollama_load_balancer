@@ -62,6 +62,13 @@ Download the [latest release](#release-notes) executable
 nix --extra-experimental-features "nix-command flakes" profile install "github:BigBIueWhale/ollama_load_balancer"
 ```
 
+### Docker
+
+```
+docker build -t bigbluewhale/ollama_load_balancer .
+docker run -it --rm -p 11434 bigbluewhale/ollama_load_balancer --server="http://192.168.150.134:11434=james" --server="http://192.168.150.135:11434=sara"
+```
+
 ## Usage
 
 1. Run in Powershell, CMD, or terminal. Make sure to [allow access to both public and private networks](./doc/screenshots/allow_access_to_public_and_private_networks.png) during the first time running the utility.
