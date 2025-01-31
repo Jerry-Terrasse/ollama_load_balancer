@@ -49,10 +49,29 @@ https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_00_2024_10_2
 - Optimized for immediate response to user- avoid user needing to wait
 - Ideal server-ranking implementation for performance-identical Ollama servers in chaotic environment where they can be turned on and off on a whim.
 
-## Usage
-1. Download the [latest release](#release-notes) executable
+## Installation
 
-2. Run in Powershell, CMD, or terminal. Make sure to [allow access to both public and private networks](./doc/screenshots/allow_access_to_public_and_private_networks.png) during the first time running the utility.
+
+### Executable
+
+Download the [latest release](#release-notes) executable
+
+### Nix (MacOS, Linux)
+
+```
+nix --extra-experimental-features "nix-command flakes" profile install "github:BigBIueWhale/ollama_load_balancer"
+```
+
+### Docker
+
+```
+docker build -t bigbluewhale/ollama_load_balancer .
+docker run -it --rm -p 11434 bigbluewhale/ollama_load_balancer --server="http://192.168.150.134:11434=james" --server="http://192.168.150.135:11434=sara"
+```
+
+## Usage
+
+1. Run in Powershell, CMD, or terminal. Make sure to [allow access to both public and private networks](./doc/screenshots/allow_access_to_public_and_private_networks.png) during the first time running the utility.
 ```sh
 C:\Users\user\Downloads>ollama_load_balancer.exe --version
 ollama_load_balancer 1.0.3
