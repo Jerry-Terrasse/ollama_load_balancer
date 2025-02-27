@@ -3,18 +3,14 @@ mod state;
 mod handler;
 
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server, StatusCode, server::conn::AddrStream};
+use hyper::{Server, server::conn::AddrStream};
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
-use futures_util::stream::StreamExt;
-use futures_util::Stream;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use clap::Parser;
 use ordermap::OrderMap;
-use config::{Args, ServerConfig};
-use state::{FailureRecord, ServerState, OllamaServer, print_server_statuses, SharedServerList};
-use handler::{handle_request};
+use config::Args;
+use state::{FailureRecord, ServerState, OllamaServer};
+use handler::handle_request;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

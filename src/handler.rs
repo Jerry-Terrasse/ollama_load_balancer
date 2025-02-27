@@ -1,5 +1,5 @@
-use crate::state::{OllamaServer, SharedServerList, print_server_statuses, FailureRecord};
-use hyper::{Body, Request, Response, StatusCode, server::conn::AddrStream};
+use crate::state::{SharedServerList, print_server_statuses, FailureRecord};
+use hyper::{Body, Request, Response, StatusCode};
 use std::convert::Infallible;
 use reqwest;
 use futures_util::stream::StreamExt;
