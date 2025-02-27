@@ -51,6 +51,10 @@ struct Args {
     /// This is an optional argument. It specifies the maximum number of seconds to wait for a response from the Ollama server before considering it unavailable
     #[arg(short, long, default_value_t = 30)]
     timeout: u32,
+
+    /// Listening address. Defaults to "0.0.0.0:11434"
+    #[arg(short = 'l', long, default_value = "0.0.0.0:11434")]
+    listen: String,
 }
 
 #[derive(Clone, Debug)]
@@ -117,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let addr = ([0, 0, 0, 0], 11434).into();
+    let addr: std::net::SocketAddr = args.listen.parse()?;
 
     let server = Server::bind(&addr).serve(make_svc);
 
