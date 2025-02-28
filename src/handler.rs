@@ -6,6 +6,9 @@ use futures_util::stream::StreamExt;
 use futures_util::Stream;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use futures_util::future;
+use hyper::body;
+use tokio;
 
 /// Required because two different versions of crate `http` are being used
 /// reqwest is a new version, hyper is an old version and the new API is completely
@@ -172,6 +175,127 @@ pub async fn handle_request(
         let response = Response::builder()
             .status(StatusCode::SERVICE_UNAVAILABLE)
             .body(Body::from("No available servers"))
+            .unwrap();
+        Ok(response)
+    }
+}
+
+pub async fn handle_request_parallel(
+    mut req: Request<Body>,
+    servers: SharedServerList,
+    remote_addr: std::net::SocketAddr,
+    timeout_secs: u32,
+) -> Result<Response<Body>, Infallible> {
+    let whole_body = body::to_bytes(req.body_mut()).await.unwrap_or_default();
+    let req_method = match hyper_method_to_reqwest_method(req.method().clone()) {
+        Ok(m) => m,
+        Err(e) => {
+            return Ok(Response::builder()
+                .status(StatusCode::METHOD_NOT_ALLOWED)
+                .body(Body::from(format!("hyper_method_to_reqwest_method failed: {}", e)))
+                .unwrap())
+        }
+    };
+    let path = req.uri().path().to_string();
+    let headers = req.headers().clone();
+
+    let mut selected_keys = Vec::new();
+    for _ in 0..3 {
+        if let Some(key) = select_available_server(&servers, &remote_addr).await {
+            selected_keys.push(key);
+        }
+    }
+    if selected_keys.is_empty() {
+        let response = Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::from("No available servers"))
+            .unwrap();
+        return Ok(response);
+    }
+
+    let count_interval = std::time::Duration::from_secs(3);
+    let tasks: Vec<_> = selected_keys.into_iter().map(|server_url| {
+        let method = req_method.clone();
+        let path_clone = path.clone();
+        let headers_clone = headers.clone();
+        let body_bytes = whole_body.clone();
+        let servers_clone = servers.clone();
+        let remote_addr_clone = remote_addr.clone();
+        tokio::spawn(async move {
+            let uri = format!("{}{}", server_url, path_clone);
+            let mut builder = reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(1));
+            if timeout_secs == 0 {
+                builder = builder.pool_idle_timeout(None);
+            } else {
+                let timeout = std::time::Duration::from_secs(timeout_secs.into());
+                builder = builder.read_timeout(timeout).pool_idle_timeout(timeout);
+            }
+            let client = builder.build().unwrap();
+            let mut request_builder = client.request(method, &uri);
+            for (k, v) in headers_clone.iter() {
+                request_builder = request_builder.header(k.as_str(), v.as_bytes());
+            }
+            request_builder = request_builder.body(body_bytes);
+            
+            let begin_time = std::time::Instant::now();
+            let response = match request_builder.send().await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    println!("Error sending request to {}: {}", server_url, e);
+                    return None;
+                }
+            };
+            let status = response.status();
+            let resp_headers = response.headers().clone();
+            let mut stream = response.bytes_stream().boxed();
+            let mut bytes_count = 0;
+            let mut buffer = Vec::new();
+            while begin_time.elapsed() < count_interval {
+                match stream.next().await {
+                    Some(Ok(chunk)) => {
+                        bytes_count += chunk.len();
+                        buffer.extend_from_slice(&chunk);
+                    },
+                    Some(Err(e)) => {
+                        println!("Error reading chunk from {}: {}", server_url, e);
+                        break;
+                    },
+                    None => break,
+                }
+            }
+            println!("Server {} received {} bytes in {} seconds", server_url, bytes_count, count_interval.as_secs());
+            let buf_stream = futures_util::stream::iter(vec![Ok(bytes::Bytes::from(buffer))]);
+            stream = buf_stream.chain(stream).boxed();
+            let guard = ServerGuard {
+                servers: servers_clone,
+                key: server_url.clone(),
+            };
+            Some((bytes_count, status, resp_headers, stream, guard))
+        })
+    }).collect();
+
+    let results = future::join_all(tasks).await;
+    let best = results.into_iter().filter_map(|res|
+        if let Ok(Some((cnt, status, headers, stream, guard))) = res {
+            Some((cnt, status, headers, stream, guard))
+        } else {
+            None
+        }
+    ).max_by_key(|(cnt, _, _, _, _)| *cnt);
+
+    if let Some((_, status, resp_headers, stream, _guard)) = best {
+        let mut resp_builder = Response::builder().status(u16::from(status));
+        for (k, v) in resp_headers.iter() {
+            resp_builder = resp_builder.header(k.to_string(), v.to_str().unwrap());
+        }
+        let hyper_body = Body::wrap_stream(stream);
+        let response = resp_builder.body(hyper_body).unwrap();
+        Ok(response)
+    } else {
+        let response = Response::builder()
+            .status(StatusCode::BAD_GATEWAY)
+            .body(Body::from("All parallel requests failed"))
             .unwrap();
         Ok(response)
     }

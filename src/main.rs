@@ -10,7 +10,7 @@ use clap::Parser;
 use ordermap::OrderMap;
 use config::Args;
 use state::{FailureRecord, ServerState, OllamaServer};
-use handler::handle_request;
+use handler::{handle_request, handle_request_parallel};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -50,7 +50,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
                 let servers = servers.clone();
-                handle_request(req, servers, remote_addr, args.timeout)
+                // handle_request(req, servers, remote_addr, args.timeout)
+                handle_request_parallel(req, servers, remote_addr, args.timeout)
             }))
         }
     });
