@@ -39,11 +39,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}. {} ({})", index + 1, addr, srv.name);
     }
     println!("");
-    println!("⚙️  Timeout setting: Will abandon Ollama server after {} seconds of silence", args.timeout);
+    println!("⚙️  Timeout setting: t0={}, t1={}, timeout_load={}", args.t0, args.t1, args.timeout_load);
     println!("");
 
     let servers = Arc::new(Mutex::new(servers_map));
     let global_opts = ReqOpt {
+        timeout_load: args.timeout_load,
         t0: args.t0,
         t1: args.t1,
     };

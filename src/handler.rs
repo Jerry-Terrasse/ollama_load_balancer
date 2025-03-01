@@ -14,6 +14,7 @@ use tokio;
 /// Runtime options for the request handler
 #[derive(Clone, Copy)]
 pub struct ReqOpt {
+    pub timeout_load: u32,
     pub t0: u32,
     pub t1: u32,
 }
@@ -203,8 +204,8 @@ pub async fn dispatch(
             .body(Body::from("Ollama is running"))
             .unwrap()
         ),
-        "/api/tags" | "/api/show" => handle_request(req, servers, remote_addr, 100).await, // TODO
-        "/api/generate" => handle_request(req, servers, remote_addr, opts.t0).await, // TODO
+        "/api/tags" | "/api/show" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
+        "/api/generate" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
         "/api/chat" => handle_request_parallel(req, servers, remote_addr, opts).await,
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_IMPLEMENTED)

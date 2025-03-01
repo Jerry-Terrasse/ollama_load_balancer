@@ -33,14 +33,9 @@ pub struct Args {
     #[arg(short, long, required = true)]
     pub server: Vec<ServerConfig>,
 
-    /// Max seconds to allow Ollama server to pause.
-    ///
-    /// Don't set this too low because if the delay is too great at the beginning of response generation that will cause failure.
-    /// Pass 0 to disable timeout.
-    /// 
-    /// This is an optional argument. It specifies the maximum number of seconds to wait for a response from the Ollama server before considering it unavailable
-    #[arg(short, long, default_value_t = 30)]
-    pub timeout: u32,
+    /// Maximum time in seconds to wait for a server to load a model.
+    #[arg(long, default_value_t = 30)]
+    pub timeout_load: u32,
 
     /// A server must return some tokens before t0.
     #[arg(long, default_value_t = 5)]
