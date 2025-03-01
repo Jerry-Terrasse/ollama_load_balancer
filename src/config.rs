@@ -30,8 +30,12 @@ pub struct Args {
     ///
     /// This is a required argument. It specifies the addresses of the Ollama servers
     /// that the load balancer will distribute requests to, plus a friendly name.
-    #[arg(short, long, required = true)]
-    pub server: Vec<ServerConfig>,
+    #[arg(short, long)]
+    pub servers: Vec<ServerConfig>,
+
+    /// Path to a file containing a list of servers. Syntax is the same as --server.
+    #[arg(long)]
+    pub server_file: Option<String>,
 
     /// Maximum time in seconds to wait for a server to load a model.
     #[arg(long, default_value_t = 30)]

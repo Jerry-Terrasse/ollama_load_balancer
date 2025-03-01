@@ -12,37 +12,42 @@ use config::Args;
 use state::{FailureRecord, ServerState, OllamaServer};
 use handler::{dispatch, ReqOpt};
 
+fn add_server(servers: state::SharedServerList, server: &config::ServerConfig) {
+    let mut servers = servers.lock().unwrap();
+    if servers.contains_key(&server.address) {
+        println!("Warning: Server {} already exists, updating name to {}", server.address, server.name);
+        servers.get_mut(&server.address).unwrap().name = server.name.clone();
+        return;
+    }
+    servers.insert(server.address.clone(), OllamaServer {
+        state: ServerState {
+            busy: false,
+            failure_record: FailureRecord::Reliable,
+        },
+        name: server.name.clone(),
+    });
+    println!("Added server ({}) {} with name {}", servers.len(), server.address, server.name);
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let mut servers_map = OrderMap::new();
-    for config in args.server {
-        let address = config.address.clone();
-        let name = config.name.clone();
+    let servers = Arc::new(Mutex::new(OrderMap::new()));
+    args.servers.iter().for_each(|s| { add_server(servers.clone(), s); });
 
-        if servers_map.contains_key(&address) {
-            return Err(format!("Duplicate server address found: {}", address).into());
-        }
-        servers_map.insert(address.clone(), OllamaServer {
-            state: ServerState {
-                busy: false,
-                failure_record: FailureRecord::Reliable,
-            },
-            name,
-        });
+    if let Some(file) = &args.server_file {
+        let contents = std::fs::read_to_string(file)?;
+        let configs: Vec<config::ServerConfig> = contents.lines().map(|line| line.parse().unwrap()).collect();
+        configs.iter().for_each(|s| { add_server(servers.clone(), s); });
     }
 
-    println!("");
-    println!("📒 Ollama servers list:");
-    for (index, (addr, srv)) in servers_map.iter().enumerate() {
-        println!("{}. {} ({})", index + 1, addr, srv.name);
-    }
+    assert!(!servers.lock().unwrap().is_empty(), "Fatal Error: No servers provided");
+
     println!("");
     println!("⚙️  Timeout setting: t0={}, t1={}, timeout_load={}", args.t0, args.t1, args.timeout_load);
     println!("");
 
-    let servers = Arc::new(Mutex::new(servers_map));
     let global_opts = ReqOpt {
         timeout_load: args.timeout_load,
         t0: args.t0,
