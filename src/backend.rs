@@ -1,14 +1,9 @@
-use crate::state::{SharedServerList, print_server_statuses, FailureRecord};
-use std::convert::Infallible;
 use std::time::{Duration, Instant};
 use reqwest::{StatusCode, Method, Client, header::HeaderMap};
 use hyper;
 use futures_util::stream::StreamExt;
 use futures_util::Stream;
 use std::pin::Pin;
-use std::task::{Context, Poll};
-use futures_util::future;
-use tokio;
 
 /// Runtime options for the backend request.
 #[derive(Clone, Copy)]
@@ -107,4 +102,31 @@ pub async fn send_request_monitored(
         stream,
     };
     Ok((perf, repacked))
+}
+
+pub async fn send_request(
+    req: UnpackedRequest,
+    backend_url: &str,
+    timeout_secs: u32,
+) -> Result<reqwest::Response, Box<dyn std::error::Error>> {
+    let (uri, req_method, path, headers, whole_body) = req;
+    let uri = format!("{}{}", backend_url, uri);
+
+    let mut builder = reqwest::Client::builder().connect_timeout(Duration::from_secs(1));
+    if timeout_secs == 0 {
+        builder = builder.pool_idle_timeout(None);
+    } else {
+        let timeout = Duration::from_secs(timeout_secs.into());
+        builder = builder.read_timeout(timeout).pool_idle_timeout(timeout);
+    }
+    let client = builder.build()?;
+    let mut request_builder = client.request(req_method, &uri);
+
+    for (key_h, value) in headers.iter() {
+        request_builder = request_builder.header(key_h.as_str(), value.as_bytes());
+    }
+    request_builder = request_builder.body(whole_body);
+
+    let response = request_builder.send().await?;
+    Ok(response)
 }
