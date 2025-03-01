@@ -30,7 +30,7 @@ async fn unpack_req(mut req: Request<Body>) -> Result<UnpackedRequest, Box<dyn s
     let path = req.uri().path().to_string();
     let headers = req.headers().clone();
 
-    Ok((uri, req_method, path, headers, whole_body))
+    Ok((uri, req_method, path, Some(headers), Some(whole_body)))
 }
 
 pub async fn dispatch(

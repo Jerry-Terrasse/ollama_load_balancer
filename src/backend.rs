@@ -24,7 +24,7 @@ pub struct RepackedResponse {
     pub stream: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
 }
 
-pub type UnpackedRequest = (String, Method, String, hyper::HeaderMap, bytes::Bytes);
+pub type UnpackedRequest = (String, Method, String, Option<hyper::HeaderMap>, Option<bytes::Bytes>);
 
 pub async fn send_request_monitored(
     req: UnpackedRequest,
@@ -44,10 +44,14 @@ pub async fn send_request_monitored(
     }
     let client = builder.build().unwrap();
     let mut request_builder = client.request(req_method, &uri);
-    for (k, v) in headers.iter() {
-        request_builder = request_builder.header(k.as_str(), v.to_str().unwrap());
+    if let Some(headers) = headers {
+        for (k, v) in headers.iter() {
+            request_builder = request_builder.header(k.as_str(), v.to_str().unwrap());
+        }
     }
-    request_builder = request_builder.body(whole_body);
+    if let Some(whole_body) = whole_body {
+        request_builder = request_builder.body(whole_body);
+    }
 
     let begin_time = Instant::now();
     let t0 = Duration::from_secs(opts.t0.into());
@@ -108,7 +112,7 @@ pub async fn send_request(
     req: UnpackedRequest,
     backend_url: &str,
     timeout_secs: u32,
-) -> Result<reqwest::Response, Box<dyn std::error::Error>> {
+) -> Result<reqwest::Response, Box<dyn std::error::Error + Send + Sync>> {
     let (uri, req_method, path, headers, whole_body) = req;
     let uri = format!("{}{}", backend_url, uri);
 
@@ -122,10 +126,14 @@ pub async fn send_request(
     let client = builder.build()?;
     let mut request_builder = client.request(req_method, &uri);
 
-    for (key_h, value) in headers.iter() {
-        request_builder = request_builder.header(key_h.as_str(), value.as_bytes());
+    if let Some(headers) = headers {
+        for (k, v) in headers.iter() {
+            request_builder = request_builder.header(k.as_str(), v.to_str().unwrap());
+        }
     }
-    request_builder = request_builder.body(whole_body);
+    if let Some(whole_body) = whole_body {
+        request_builder = request_builder.body(whole_body);
+    }
 
     let response = request_builder.send().await?;
     Ok(response)

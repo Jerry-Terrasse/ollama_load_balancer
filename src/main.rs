@@ -2,21 +2,28 @@ mod config;
 mod state;
 mod handler;
 mod backend;
+mod api;
 
+use futures_util::future;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Server, server::conn::AddrStream};
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 use clap::Parser;
 use ordermap::OrderMap;
+
 use config::Args;
-use state::add_server;
+use state::{add_server, sync_server};
 use handler::dispatch;
 use backend::ReqOpt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    println!("");
+    println!("⚙️  Timeout setting: t0={}, t1={}, timeout_load={}", args.t0, args.t1, args.timeout_load);
+    println!("");
 
     let servers = Arc::new(Mutex::new(OrderMap::new()));
     args.servers.iter().for_each(|s| { add_server(servers.clone(), s); });
@@ -27,11 +34,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         configs.iter().for_each(|s| { add_server(servers.clone(), s); });
     }
 
-    assert!(!servers.lock().unwrap().is_empty(), "Fatal Error: No servers provided");
+    let server_addrs = servers.lock().unwrap().keys().cloned().collect::<Vec<String>>();
+    assert!(!server_addrs.is_empty(), "Fatal Error: No servers provided");
 
-    println!("");
-    println!("⚙️  Timeout setting: t0={}, t1={}, timeout_load={}", args.t0, args.t1, args.timeout_load);
-    println!("");
+    // initialize all servers
+    let sync_tasks = server_addrs.into_iter().map(
+        |s| tokio::spawn(sync_server(servers.clone(), s, 5))
+    ).collect::<Vec<_>>();
+    future::join_all(sync_tasks).await;
 
     let global_opts = ReqOpt {
         timeout_load: args.timeout_load,
