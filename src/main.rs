@@ -1,6 +1,7 @@
 mod config;
 mod state;
 mod handler;
+mod backend;
 
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Server, server::conn::AddrStream};
@@ -9,25 +10,9 @@ use std::sync::{Arc, Mutex};
 use clap::Parser;
 use ordermap::OrderMap;
 use config::Args;
-use state::{FailureRecord, ServerState, OllamaServer};
-use handler::{dispatch, ReqOpt};
-
-fn add_server(servers: state::SharedServerList, server: &config::ServerConfig) {
-    let mut servers = servers.lock().unwrap();
-    if servers.contains_key(&server.address) {
-        println!("Warning: Server {} already exists, updating name to {}", server.address, server.name);
-        servers.get_mut(&server.address).unwrap().name = server.name.clone();
-        return;
-    }
-    servers.insert(server.address.clone(), OllamaServer {
-        state: ServerState {
-            busy: false,
-            failure_record: FailureRecord::Reliable,
-        },
-        name: server.name.clone(),
-    });
-    println!("Added server ({}) {} with name {}", servers.len(), server.address, server.name);
-}
+use state::add_server;
+use handler::dispatch;
+use backend::ReqOpt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

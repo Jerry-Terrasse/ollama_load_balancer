@@ -1,4 +1,5 @@
 use crate::state::{SharedServerList, print_server_statuses, FailureRecord};
+use crate::backend::{UnpackedRequest, ReqOpt, send_request_monitored};
 use hyper::{Body, Request, Response, StatusCode};
 use std::convert::Infallible;
 use std::time::{Duration, Instant};
@@ -10,14 +11,6 @@ use std::task::{Context, Poll};
 use futures_util::future;
 use hyper::body;
 use tokio;
-
-/// Runtime options for the request handler
-#[derive(Clone, Copy)]
-pub struct ReqOpt {
-    pub timeout_load: u32,
-    pub t0: u32,
-    pub t1: u32,
-}
 
 /// Required because two different versions of crate `http` are being used
 /// reqwest is a new version, hyper is an old version and the new API is completely
@@ -188,33 +181,31 @@ pub async fn dispatch(
     response
 }
 
-struct PerformanceInfo {
-    pub first_token_time: Instant,
-    // TODO: we can't use token/s because float is not supported by max_by_key
-    pub duration_tokens: usize,
-}
-
-pub async fn handle_request_parallel(
-    mut req: Request<Body>,
-    servers: SharedServerList,
-    remote_addr: std::net::SocketAddr,
-    opts: ReqOpt,
-) -> Result<Response<Body>, Infallible> {
+async fn unpack_req(mut req: Request<Body>) -> Result<UnpackedRequest, Box<dyn std::error::Error>> {
+    let uri = req.uri().to_string();
     let whole_body = body::to_bytes(req.body_mut()).await.unwrap_or_default();
     let req_method = match hyper_method_to_reqwest_method(req.method().clone()) {
         Ok(m) => m,
         Err(e) => {
-            return Ok(Response::builder()
-                .status(StatusCode::METHOD_NOT_ALLOWED)
-                .body(Body::from(format!("hyper_method_to_reqwest_method failed: {}", e)))
-                .unwrap())
+            return Err(e.into());
         }
     };
     let path = req.uri().path().to_string();
     let headers = req.headers().clone();
 
+    Ok((uri, req_method, path, headers, whole_body))
+}
+
+pub async fn handle_request_parallel(
+    req: Request<Body>,
+    servers: SharedServerList,
+    remote_addr: std::net::SocketAddr,
+    opts: ReqOpt,
+) -> Result<Response<Body>, Infallible> {
+    let unpacked_req = unpack_req(req).await.unwrap();
+
     let mut selected_keys = Vec::new();
-    let server_num = if path == "/api/chat" { 3 } else { 1 };
+    let server_num = 3;
     for _ in 0..server_num {
         if let Some(key) = select_available_server(&servers, &remote_addr).await {
             selected_keys.push(key);
@@ -229,96 +220,29 @@ pub async fn handle_request_parallel(
     }
 
     let tasks: Vec<_> = selected_keys.into_iter().map(|server_url| {
-        let method = req_method.clone();
-        let path_clone = path.clone();
-        let headers_clone = headers.clone();
-        let body_bytes = whole_body.clone();
-        let servers_clone = servers.clone();
-        let remote_addr_clone = remote_addr.clone();
+        let req = unpacked_req.clone();
         tokio::spawn(async move {
-            let uri = format!("{}{}", server_url, path_clone);
-            let mut builder = reqwest::Client::builder()
-                .connect_timeout(Duration::from_secs(1));
-            if opts.t0 == 0 {
-                builder = builder.pool_idle_timeout(None);
-            } else {
-                let timeout = Duration::from_secs(opts.t0.into());
-                builder = builder.read_timeout(timeout).pool_idle_timeout(timeout);
-            }
-            let client = builder.build().unwrap();
-            let mut request_builder = client.request(method, &uri);
-            for (k, v) in headers_clone.iter() {
-                request_builder = request_builder.header(k.as_str(), v.as_bytes());
-            }
-            request_builder = request_builder.body(body_bytes);
-            
-            let begin_time = Instant::now();
-            let t0 = Duration::from_secs(opts.t0.into());
-            let t1 = Duration::from_secs(opts.t1.into());
-            let response = match request_builder.send().await {
-                Ok(resp) => resp,
-                Err(e) => {
-                    println!("Error sending request to {}: {}", server_url, e);
-                    return None;
-                }
-            };
-            let status = response.status();
-            let resp_headers = response.headers().clone();
-            let mut stream = response.bytes_stream().boxed();
-            let mut buffer = Vec::new();
-            let mut bytes_count = 0;
-            let mut ftt: Option<Instant> = None;
-            loop {
-                let res = stream.next().await;
-                let elapsed = begin_time.elapsed();
-                match res {
-                    Some(Ok(chunk)) => {
-                        buffer.extend_from_slice(&chunk);
-                        if ftt.is_none() {
-                            ftt = Some(begin_time + elapsed);
-                        }
-                        if elapsed >= t1 {
-                            break;
-                        }
-                        if elapsed > t0 {
-                            bytes_count += chunk.len();
-                        }
-                    },
-                    Some(Err(e)) => {
-                        println!("Error reading chunk from {}: {}", server_url, e);
-                        break;
-                    },
-                    None => break,
-                }
-            }
-            println!("time: [{:?}] Server {} received {} bytes in {} seconds", Instant::now(), server_url, bytes_count, t1.as_secs());
-            let buf_stream = futures_util::stream::iter(vec![Ok(bytes::Bytes::from(buffer))]);
-            stream = buf_stream.chain(stream).boxed();
-            let guard = ServerGuard {
-                servers: servers_clone,
-                key: server_url.clone(),
-            };
-            Some((PerformanceInfo{first_token_time: ftt.unwrap(), duration_tokens: bytes_count}, status, resp_headers, stream, guard))
+            send_request_monitored(req, &server_url, opts).await
         })
     }).collect();
 
     let results = future::join_all(tasks).await;
     let best = results.into_iter().filter_map(|res|
-        if let Ok(Some((cnt, status, headers, stream, guard))) = res {
-            Some((cnt, status, headers, stream, guard))
+        if let Ok(Ok((perf, repacked))) = res {
+            Some((perf, repacked))
         } else {
             None
         }
-    ).max_by_key(|(perf, _, _, _, _)| perf.duration_tokens);
+    ).max_by_key(|(perf, _)| perf.duration_tokens);
     
     // .partial_max_by_key(|(cnt, _, _, _, _)| *cnt);
 
-    if let Some((_, status, resp_headers, stream, _guard)) = best {
-        let mut resp_builder = Response::builder().status(u16::from(status));
-        for (k, v) in resp_headers.iter() {
+    if let Some((_, resp)) = best {
+        let mut resp_builder = Response::builder().status(u16::from(resp.status));
+        for (k, v) in resp.headers.iter() {
             resp_builder = resp_builder.header(k.to_string(), v.to_str().unwrap());
         }
-        let hyper_body = Body::wrap_stream(stream);
+        let hyper_body = Body::wrap_stream(resp.stream);
         let response = resp_builder.body(hyper_body).unwrap();
         Ok(response)
     } else {
