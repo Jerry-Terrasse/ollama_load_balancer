@@ -10,7 +10,7 @@ use clap::Parser;
 use ordermap::OrderMap;
 use config::Args;
 use state::{FailureRecord, ServerState, OllamaServer};
-use handler::{handle_request, handle_request_parallel};
+use handler::{dispatch, ReqOpt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,15 +43,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("");
 
     let servers = Arc::new(Mutex::new(servers_map));
+    let global_opts = ReqOpt {
+        t0: args.t0,
+        t1: args.t1,
+    };
 
     let make_svc = make_service_fn(|conn: &AddrStream| {
         let remote_addr = conn.remote_addr();
         let servers = servers.clone();
+        let opts = global_opts.clone();
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
                 let servers = servers.clone();
                 // handle_request(req, servers, remote_addr, args.timeout)
-                handle_request_parallel(req, servers, remote_addr, args.timeout)
+                // handle_request_parallel(req, servers, remote_addr, opts)
+                dispatch(req, servers, remote_addr, opts)
             }))
         }
     });

@@ -42,6 +42,13 @@ pub struct Args {
     #[arg(short, long, default_value_t = 30)]
     pub timeout: u32,
 
+    /// A server must return some tokens before t0.
+    #[arg(long, default_value_t = 5)]
+    pub t0: u32,
+    /// Number of tokens in t0~t1 is counted.
+    #[arg(long, default_value_t = 10)]
+    pub t1: u32,
+
     /// Listening address. Defaults to "0.0.0.0:11434"
     #[arg(short = 'l', long, default_value = "0.0.0.0:11434")]
     pub listen: String,
