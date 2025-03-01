@@ -74,8 +74,6 @@ pub async fn handle_request(
         let client = builder.build().unwrap();
         let mut request_builder = client.request(reqwest_method, &uri);
 
-        let is_chat = path == "/api/chat";
-
         // Copy headers
         for (key_h, value) in req.headers() {
             request_builder = request_builder.header(key_h.as_str(), value.as_bytes());
@@ -91,9 +89,6 @@ pub async fn handle_request(
 
         request_builder = request_builder.body(reqwest_body);
 
-        let begin_time = Instant::now();
-        let count_interval = Duration::from_secs(3);
-
         // Send the request and handle the response
         match request_builder.send().await {
             Ok(response) => {
@@ -105,32 +100,7 @@ pub async fn handle_request(
                     resp_builder = resp_builder.header(key_h.to_string(), value.to_str().unwrap());
                 }
 
-                let mut stream = response.bytes_stream().boxed();
-                if is_chat {
-                    let mut bytes_count = 0;
-                    let mut buffer = Vec::new();
-                    while begin_time.elapsed() < count_interval {
-                        match stream.next().await {
-                            Some(Ok(chunk)) => {
-                                bytes_count += chunk.len();
-                                buffer.extend_from_slice(&chunk);
-                            }
-                            Some(Err(e)) => {
-                                println!("Error reading chunk: {}", e);
-                                break;
-                            }
-                            None => {
-                                break;
-                            }
-                        }
-                    }
-
-                    println!("Number of bytes received in {} seconds: {}", count_interval.as_secs(), bytes_count);
-
-                    // Recover the stream
-                    let buf_stream = futures_util::stream::iter(vec![Ok(bytes::Bytes::from(buffer))]);
-                    stream = buf_stream.chain(stream).boxed();
-                }
+                let stream = response.bytes_stream().boxed();
 
                 // Wrap the response body stream with our custom stream.
                 // The purpose of our custom stream as opposed to directly using response.bytes_stream()
