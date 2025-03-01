@@ -18,6 +18,50 @@ pub fn hyper_method_to_reqwest_method(method: hyper::Method) -> Result<reqwest::
     return Ok(method.as_str().parse::<reqwest::Method>()?);
 }
 
+async fn unpack_req(mut req: Request<Body>) -> Result<UnpackedRequest, Box<dyn std::error::Error>> {
+    let uri = req.uri().to_string();
+    let whole_body = body::to_bytes(req.body_mut()).await.unwrap_or_default();
+    let req_method = match hyper_method_to_reqwest_method(req.method().clone()) {
+        Ok(m) => m,
+        Err(e) => {
+            return Err(e.into());
+        }
+    };
+    let path = req.uri().path().to_string();
+    let headers = req.headers().clone();
+
+    Ok((uri, req_method, path, headers, whole_body))
+}
+
+pub async fn dispatch(
+    req: Request<Body>,
+    servers: SharedServerList,
+    remote_addr: std::net::SocketAddr,
+    opts: ReqOpt,
+) -> Result<Response<Body>, Infallible> {
+    let path = req.uri().path().to_string();
+    let remote = remote_addr.to_string();
+    let method = req.method().to_string();
+    let response = match path.as_str() {
+        "/" => Ok(Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::from("Ollama is running"))
+            .unwrap()
+        ),
+        "/api/tags" | "/api/show" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
+        "/api/generate" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
+        "/api/chat" => handle_request_parallel(req, servers, remote_addr, opts).await,
+        _ => Ok(Response::builder()
+            .status(StatusCode::NOT_IMPLEMENTED)
+            .body(Body::from(format!("Path {} is not implemented", path)))
+            .unwrap()
+        ),
+    };
+    let status = response.as_ref().map(|r| r.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    println!("{} - {} {} - {} {}", remote, method, path, status.as_u16(), status.canonical_reason().unwrap_or("Unknown"));
+    response
+}
+
 pub async fn handle_request(
     req: Request<Body>,
     servers: SharedServerList,
@@ -53,12 +97,10 @@ pub async fn handle_request(
         key: key.clone(),
     };
 
-    // 调用 backend 中的 send_request 替换原有请求逻辑
     match crate::backend::send_request(unpacked_req, &key, timeout_secs).await {
         Ok(response) => {
             let status = response.status();
             let mut resp_builder = Response::builder().status(u16::from(status));
-            // Copy headers
             for (key_h, value) in response.headers() {
                 resp_builder = resp_builder.header(key_h.to_string(), value.to_str().unwrap());
             }
@@ -95,50 +137,6 @@ pub async fn handle_request(
             Ok(response)
         }
     }
-}
-
-pub async fn dispatch(
-    req: Request<Body>,
-    servers: SharedServerList,
-    remote_addr: std::net::SocketAddr,
-    opts: ReqOpt,
-) -> Result<Response<Body>, Infallible> {
-    let path = req.uri().path().to_string();
-    let remote = remote_addr.to_string();
-    let method = req.method().to_string();
-    let response = match path.as_str() {
-        "/" => Ok(Response::builder()
-            .status(StatusCode::OK)
-            .body(Body::from("Ollama is running"))
-            .unwrap()
-        ),
-        "/api/tags" | "/api/show" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
-        "/api/generate" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
-        "/api/chat" => handle_request_parallel(req, servers, remote_addr, opts).await,
-        _ => Ok(Response::builder()
-            .status(StatusCode::NOT_IMPLEMENTED)
-            .body(Body::from(format!("Path {} is not implemented", path)))
-            .unwrap()
-        ),
-    };
-    let status = response.as_ref().map(|r| r.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    println!("{} - {} {} - {} {}", remote, method, path, status.as_u16(), status.canonical_reason().unwrap_or("Unknown"));
-    response
-}
-
-async fn unpack_req(mut req: Request<Body>) -> Result<UnpackedRequest, Box<dyn std::error::Error>> {
-    let uri = req.uri().to_string();
-    let whole_body = body::to_bytes(req.body_mut()).await.unwrap_or_default();
-    let req_method = match hyper_method_to_reqwest_method(req.method().clone()) {
-        Ok(m) => m,
-        Err(e) => {
-            return Err(e.into());
-        }
-    };
-    let path = req.uri().path().to_string();
-    let headers = req.headers().clone();
-
-    Ok((uri, req_method, path, headers, whole_body))
 }
 
 pub async fn handle_request_parallel(
