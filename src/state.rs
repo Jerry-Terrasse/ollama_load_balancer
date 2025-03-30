@@ -39,11 +39,11 @@ pub struct OllamaServer {
 pub struct ServerSnapshot {
     pub state: ServerState,
     pub name: String,
-    pub models: HashMap<String, ()>,
-    pub actives: HashMap<String, ()>,
+    pub models: HashMap<String, Option<ModelConfig>>,
+    pub actives: HashMap<String, Option<ModelConfig>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub name: String,
     pub detail: Value,
@@ -147,11 +147,20 @@ pub async fn sync_server(
     }
 }
 
-pub fn snapshot_servers(servers: SharedServerList) -> HashMap<String, ServerSnapshot> {
+pub fn snapshot_servers(servers: SharedServerList, need_detail: bool) -> HashMap<String, ServerSnapshot> {
     let servers = servers.lock().unwrap();
     servers.iter().map(|(addr, srv)| {
-        let models = srv.models.keys().map(|k| (k.clone(), ())).collect();
-        let actives = srv.actives.keys().map(|k| (k.clone(), ())).collect();
+        let models: HashMap<String, Option<ModelConfig>> = if need_detail {
+            srv.models.iter().map(|(k, v)| (k.clone(), Some(v.clone()))).collect()
+        } else {
+            srv.models.keys().map(|k| (k.clone(), None)).collect()
+        };
+        // let actives = srv.actives.keys().map(|k| (k.clone(), ())).collect();
+        let actives: HashMap<String, Option<ModelConfig>> = if need_detail {
+            srv.actives.iter().map(|(k, v)| (k.clone(), Some(v.clone()))).collect()
+        } else {
+            srv.actives.keys().map(|k| (k.clone(), None)).collect()
+        };
         (addr.clone(), ServerSnapshot {
             state: srv.state.clone(),
             name: srv.name.clone(),
@@ -200,7 +209,7 @@ pub fn select_servers(
         0
     };
 
-    let snaps = snapshot_servers(servers);
+    let snaps = snapshot_servers(servers, false);
     let mut selected: Vec<(&str, Vec<&String>)> = Vec::new();
     let mut num_selected = 0;
 

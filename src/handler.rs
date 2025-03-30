@@ -1,7 +1,8 @@
-use crate::state::{print_server_statuses, select_servers, FailureRecord, SelOpt, SharedServerList};
+use crate::state::{print_server_statuses, select_servers, snapshot_servers, FailureRecord, SelOpt, SharedServerList};
 use crate::backend::{UnpackedRequest, ReqOpt, send_request_monitored};
 use hyper::{Body, Request, Response, StatusCode};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::convert::Infallible;
 use reqwest;
 use futures_util::stream::StreamExt;
@@ -11,6 +12,7 @@ use std::task::{Context, Poll};
 use futures_util::future;
 use hyper::body;
 use tokio;
+use serde_json::json;
 
 /// Required because two different versions of crate `http` are being used
 /// reqwest is a new version, hyper is an old version and the new API is completely
@@ -56,7 +58,8 @@ pub async fn dispatch(
             .body(Body::from("Ollama is running"))
             .unwrap()
         ),
-        "/api/tags" | "/api/show" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
+        "/api/tags" => handle_tags(req, servers, remote_addr).await,
+        "/api/show" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
         "/api/generate" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
         "/api/chat" => handle_chat_parallel(req, servers, remote_addr, opts).await,
         _ => Ok(Response::builder()
@@ -365,4 +368,29 @@ where
             Poll::Pending => Poll::Pending,
         }
     }
+}
+
+pub async fn handle_tags(
+    _req: Request<Body>,
+    servers: SharedServerList,
+    _remote_addr: std::net::SocketAddr,
+) -> Result<Response<Body>, Infallible> {
+    let snaps = snapshot_servers(servers, true);
+    let mut merged_models = HashMap::new();
+    for snap in snaps.values() {
+        println!("server {} has {} models", snap.name, snap.models.len());
+        merged_models.extend(snap.models.clone());
+    }
+    println!("totally we have {} models", merged_models.len());
+    // collect all model details
+    let models: Vec<Value> = merged_models.into_iter().map(|(_name, model)|
+        model.unwrap().detail
+    ).collect();
+    let response_body = serde_json::to_string(&json!({ "models": models })).unwrap();
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(response_body))
+        .unwrap()
+    )
 }
