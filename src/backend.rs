@@ -4,6 +4,7 @@ use hyper;
 use futures_util::stream::StreamExt;
 use futures_util::Stream;
 use std::pin::Pin;
+use chrono::Local;
 
 /// Runtime options for the backend request.
 #[derive(Clone, Copy)]
@@ -92,7 +93,7 @@ pub async fn send_request_monitored(
             None => break,
         }
     }
-    println!("time: [{:?}] Server {} received {} bytes in {} seconds", Instant::now(), backend_url, bytes_count, t1.as_secs());
+    println!("time: [{}] Server {} received {} bytes in {} seconds", Local::now().format("%Y-%m-%d %H:%M:%S"), backend_url, bytes_count, t1.as_secs());
     let buf_stream = futures_util::stream::iter(vec![Ok(bytes::Bytes::from(buffer))]);
     stream = buf_stream.chain(stream).boxed();
     

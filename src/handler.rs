@@ -1,6 +1,7 @@
-use crate::state::{SharedServerList, print_server_statuses, FailureRecord};
+use crate::state::{print_server_statuses, select_servers, FailureRecord, SelOpt, SharedServerList};
 use crate::backend::{UnpackedRequest, ReqOpt, send_request_monitored};
 use hyper::{Body, Request, Response, StatusCode};
+use serde_json::Value;
 use std::convert::Infallible;
 use reqwest;
 use futures_util::stream::StreamExt;
@@ -33,6 +34,13 @@ async fn unpack_req(mut req: Request<Body>) -> Result<UnpackedRequest, Box<dyn s
     Ok((uri, req_method, path, Some(headers), Some(whole_body)))
 }
 
+fn parse_body(body: &bytes::Bytes) -> Result<Value, Box<dyn std::error::Error>> {
+    let body = body.to_vec();
+    let body = String::from_utf8(body)?;
+    let body = serde_json::from_str(&body)?;
+    Ok(body)
+}
+
 pub async fn dispatch(
     req: Request<Body>,
     servers: SharedServerList,
@@ -50,7 +58,7 @@ pub async fn dispatch(
         ),
         "/api/tags" | "/api/show" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
         "/api/generate" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
-        "/api/chat" => handle_request_parallel(req, servers, remote_addr, opts).await,
+        "/api/chat" => handle_chat_parallel(req, servers, remote_addr, opts).await,
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_IMPLEMENTED)
             .body(Body::from(format!("Path {} is not implemented", path)))
@@ -139,7 +147,7 @@ pub async fn handle_request(
     }
 }
 
-pub async fn handle_request_parallel(
+pub async fn handle_chat_parallel(
     req: Request<Body>,
     servers: SharedServerList,
     remote_addr: std::net::SocketAddr,
@@ -155,13 +163,29 @@ pub async fn handle_request_parallel(
         }
     };
 
-    let mut selected_keys = Vec::new();
-    let server_num = 3;
-    for _ in 0..server_num {
-        if let Some(key) = select_available_server(&servers, &remote_addr).await {
-            selected_keys.push(key);
+    let body = match parse_body(unpacked_req.4.as_ref().unwrap()) {
+        Ok(body) => body,
+        Err(e) => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from(format!("Error parsing request body: {}", e)))
+                .unwrap());
         }
-    }
+    };
+    let model = match body["model"].as_str() {
+        Some(model) => model,
+        None => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from("Request body must contain a 'model' field"))
+                .unwrap());
+        }
+    };
+    let selected_keys = select_servers(servers.clone(), model.to_string(), SelOpt {
+        count: (3, 6),
+        resurrect_p: 0.1,
+        resurrect_n: 1,
+    });
     if selected_keys.is_empty() {
         let response = Response::builder()
             .status(StatusCode::SERVICE_UNAVAILABLE)
@@ -170,25 +194,25 @@ pub async fn handle_request_parallel(
         return Ok(response);
     }
 
-    let tasks: Vec<_> = selected_keys.into_iter().map(|server_url| {
+    let tasks: Vec<_> = selected_keys.iter().map(|server_url| {
         let req = unpacked_req.clone();
+        let url = server_url.clone();
         tokio::spawn(async move {
-            send_request_monitored(req, &server_url, opts).await
+            send_request_monitored(req, &url, opts).await
         })
     }).collect();
 
     let results = future::join_all(tasks).await;
-    let best = results.into_iter().filter_map(|res|
-        if let Ok(Ok((perf, repacked))) = res {
-            Some((perf, repacked))
+    let best = results.into_iter().zip(selected_keys.into_iter()).filter_map(|res_server|
+        if let Ok(Ok((perf, repacked))) = res_server.0 {
+            Some((perf, repacked, res_server.1))
         } else {
             None
         }
-    ).max_by_key(|(perf, _)| perf.duration_tokens);
+    ).max_by_key(|(perf, _, _)| perf.duration_tokens);
     
-    // .partial_max_by_key(|(cnt, _, _, _, _)| *cnt);
-
-    if let Some((_, resp)) = best {
+    if let Some((_, resp, server)) = best {
+        println!("🤖🦸 Chose server {} to serve client {}", server, remote_addr);
         let mut resp_builder = Response::builder().status(u16::from(resp.status));
         for (k, v) in resp.headers.iter() {
             resp_builder = resp_builder.header(k.to_string(), v.to_str().unwrap());

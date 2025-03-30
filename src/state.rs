@@ -2,9 +2,11 @@ use ordermap::OrderMap;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use serde_json::Value;
+use rand::{self, Rng};
 
 use crate::config::ServerConfig;
 use crate::api::{api_tags, api_ps};
+use crate::utils::efraimidis_spirakis_sample;
 
 #[derive(Clone, Debug)]
 pub enum FailureRecord {
@@ -13,13 +15,13 @@ pub enum FailureRecord {
     SecondChanceGiven,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Health {
     Dead,
     Healthy(f32),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ServerState {
     pub busy: bool,
     pub health: Health, // default to 1.0, max 100.0
@@ -32,6 +34,13 @@ pub struct OllamaServer {
     pub name: String,
     pub models: HashMap<String, ModelConfig>,
     pub actives: HashMap<String, ModelConfig>,
+}
+
+pub struct ServerSnapshot {
+    pub state: ServerState,
+    pub name: String,
+    pub models: HashMap<String, ()>,
+    pub actives: HashMap<String, ()>,
 }
 
 #[derive(Debug)]
@@ -136,4 +145,145 @@ pub async fn sync_server(
     } else {
         println!("Warning: Server {} not found", target);
     }
+}
+
+pub fn snapshot_servers(servers: SharedServerList) -> HashMap<String, ServerSnapshot> {
+    let servers = servers.lock().unwrap();
+    servers.iter().map(|(addr, srv)| {
+        let models = srv.models.keys().map(|k| (k.clone(), ())).collect();
+        let actives = srv.actives.keys().map(|k| (k.clone(), ())).collect();
+        (addr.clone(), ServerSnapshot {
+            state: srv.state.clone(),
+            name: srv.name.clone(),
+            models,
+            actives,
+        })
+    }).collect()
+}
+
+#[derive(Default)]
+pub struct SelOpt {
+    pub count: (usize, usize),
+    pub resurrect_p: f32,
+    pub resurrect_n: usize,
+}
+
+pub fn sample_by_health<'a>(
+    snaps: &HashMap<String, ServerSnapshot>,
+    source: &[&'a String],
+    count: usize,
+    rng: &mut rand::rngs::ThreadRng,
+) -> Vec<&'a String> {
+    let healths = source.iter().map(|name| {
+        let health = match snaps.get(name.as_str()).unwrap().state.health {
+            Health::Healthy(h) => h,
+            _ => 0.1,
+        };
+        health
+    }).collect::<Vec<_>>();
+    let indices = efraimidis_spirakis_sample(&healths, count, rng);
+    indices.into_iter().map(|i| source[i]).collect()
+}
+
+pub fn select_servers(
+    servers: SharedServerList,
+    model: String,
+    opts: SelOpt,
+) -> Vec<String> {
+    let mut rng = rand::rng();
+    let (mut min_sel, mut max_sel) = opts.count;
+    let mut resurrect_n = if rng.random::<f32>() < opts.resurrect_p {
+        min_sel -= opts.resurrect_n;
+        max_sel -= opts.resurrect_n;
+        opts.resurrect_n
+    } else {
+        0
+    };
+
+    let snaps = snapshot_servers(servers);
+    let mut selected: Vec<(&str, Vec<&String>)> = Vec::new();
+    let mut num_selected = 0;
+
+    // print server snaps
+    println!("Server snapshots:");
+    for (addr, snap) in snaps.iter() {
+        let actives = snap.actives.keys().map(|k| k.as_str()).collect::<Vec<&str>>().join(", ");
+        println!("> {}: health: {:?}, actives: [{}]", addr, snap.state.health, actives);
+    }
+    println!("selecting min {} max {} resurrect {}", min_sel, max_sel, resurrect_n);
+
+    // 1. choose from alive servers with the model activated
+    let alives = snaps.iter().filter_map(|(addr, snap)| {
+        if snap.state.health != Health::Dead {
+            Some(addr)
+        } else {
+            None
+        }
+    }).collect::<Vec<_>>();
+    let actives = alives.iter().filter(|name| {
+        snaps.get(name.as_str()).unwrap().actives.contains_key(&model)
+    }).cloned().collect::<Vec<_>>();
+    if actives.len() <= max_sel { 
+        selected.push((
+            "active",
+            actives
+        ));
+    } else {
+        selected.push((
+            "active",
+            sample_by_health(&snaps, &actives, max_sel, &mut rng)
+        ));
+    }
+    num_selected += selected.last().unwrap().1.len();
+
+    // 2. choose from alive but inactive servers
+    if num_selected < min_sel {
+        let inactives = alives.iter().filter(|name| {
+            !snaps.get(name.as_str()).unwrap().actives.contains_key(&model)
+        }).cloned().collect::<Vec<_>>();
+        if selected.len() + inactives.len() <= min_sel {
+            selected.push((
+                "inactive",
+                inactives
+            ));
+        } else {
+            selected.push((
+                "inactive",
+                sample_by_health(&snaps, &inactives, min_sel - selected.len(), &mut rng)
+            ));
+        }
+        num_selected += selected.last().unwrap().1.len();
+    }
+
+    // 3. choose from dead servers
+    if num_selected < min_sel {
+        resurrect_n += min_sel - num_selected;
+    }
+    if resurrect_n > 0 {
+        let deads = snaps.iter().filter_map(|(addr, snap)| {
+            if snap.state.health == Health::Dead {
+                Some(addr)
+            } else {
+                None
+            }
+        }).collect::<Vec<_>>();
+        selected.push((
+            "resurrect",
+            sample_by_health(&snaps, &deads, resurrect_n, &mut rng)
+        ));
+        num_selected += selected.last().unwrap().1.len();
+    }
+
+    // make a summary
+    let summary = selected.iter().map(|(tag, addrs)| {
+        let names = addrs.iter().map(|a| snaps.get(a.as_str()).unwrap().name.as_str()).collect::<Vec<&str>>();
+        if names.len() > 0 {
+            format!("> {} ({}): {}", tag, names.len(), names.join(", "))
+        } else {
+            format!("> {} (0): none", tag)
+        }
+    }).collect::<Vec<String>>().join("\n");
+    println!("Selected {} servers for model {}:\n{}", num_selected, model, summary);
+
+    selected.into_iter().flat_map(|(_, addrs)| addrs).map(|s| s.clone()).collect()
 }

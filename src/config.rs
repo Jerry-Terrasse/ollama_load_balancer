@@ -42,10 +42,10 @@ pub struct Args {
     pub timeout_load: u32,
 
     /// A server must return some tokens before t0.
-    #[arg(long, default_value_t = 5)]
+    #[arg(long, default_value_t = 4)]
     pub t0: u32,
     /// Number of tokens in t0~t1 is counted.
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 6)]
     pub t1: u32,
 
     /// Listening address. Defaults to "0.0.0.0:11434"
