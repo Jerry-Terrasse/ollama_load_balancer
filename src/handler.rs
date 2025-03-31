@@ -13,6 +13,7 @@ use futures_util::future;
 use hyper::body;
 use tokio;
 use serde_json::json;
+use tracing::{info, warn, error};
 
 /// Required because two different versions of crate `http` are being used
 /// reqwest is a new version, hyper is an old version and the new API is completely
@@ -69,7 +70,7 @@ pub async fn dispatch(
         ),
     };
     let status = response.as_ref().map(|r| r.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    println!("{} - {} {} - {} {}", remote, method, path, status.as_u16(), status.canonical_reason().unwrap_or("Unknown"));
+    info!("{} - {} {} - {} {}", remote, method, path, status.as_u16(), status.canonical_reason().unwrap_or("Unknown"));
     response
 }
 
@@ -91,7 +92,7 @@ pub async fn handle_request(
     let server_key = select_available_server(&servers, &remote_addr).await;
 
     if server_key.is_none() {
-        println!("🤷 No available servers to serve client {}", remote_addr);
+        warn!("No available servers to serve client {}", remote_addr);
         {
             let servers_lock = servers.lock().unwrap();
             print_server_statuses(&servers_lock);
@@ -133,10 +134,10 @@ pub async fn handle_request(
                 if let Some(server) = servers_lock.get_mut(&key) {
                     if matches!(server.state.failure_record, FailureRecord::Reliable) {
                         server.state.failure_record = FailureRecord::Unreliable;
-                        println!("⛔😱 Server {} ({}) didn't respond, now marked Unreliable. Error: {}", key, server.name, e);
+                        warn!("Server {} ({}) did not respond, now marked Unreliable. Error: {}", key, server.name, e);
                     } else {
                         server.state.failure_record = FailureRecord::SecondChanceGiven;
-                        println!("⛔😞 Unreliable server {} ({}) didn't respond. Error: {}", key, server.name, e);
+                        warn!("Unreliable server {} ({}) did not respond. Error: {}", key, server.name, e);
                     }
                     print_server_statuses(&servers_lock);
                 }
@@ -215,7 +216,7 @@ pub async fn handle_chat_parallel(
     ).max_by_key(|(perf, _, _)| perf.duration_tokens);
     
     if let Some((_, resp, server)) = best {
-        println!("🤖🦸 Chose server {} to serve client {}", server, remote_addr);
+        info!("Chosen server {} to serve client {}", server, remote_addr);
         let mut resp_builder = Response::builder().status(u16::from(resp.status));
         for (k, v) in resp.headers.iter() {
             resp_builder = resp_builder.header(k.to_string(), v.to_str().unwrap());
@@ -241,7 +242,7 @@ pub async fn select_available_server(servers: &SharedServerList, remote_addr: &s
         for (key, server) in servers_lock.iter_mut() {
             if matches!(server.state.failure_record, FailureRecord::Reliable) && !server.state.busy {
                 server.state.busy = true;
-                println!("🤖🦸 Chose reliable server: {} ({}) to serve client {}", key, server.name, remote_addr);
+                info!("Chose reliable server: {} ({}) to serve client {}", key, server.name, remote_addr);
                 return Some(key.clone());
             }
         }
@@ -251,7 +252,7 @@ pub async fn select_available_server(servers: &SharedServerList, remote_addr: &s
         for (key, server) in servers_lock.iter_mut() {
             if matches!(server.state.failure_record, FailureRecord::Unreliable) && !server.state.busy {
                 server.state.busy = true;
-                println!("🤖😇 Giving server {} ({}) another chance with client {}", key, server.name, remote_addr);
+                info!("Giving server {} ({}) another chance with client {}", key, server.name, remote_addr);
                 return Some(key.clone());
             }
         }
@@ -270,7 +271,7 @@ pub async fn select_available_server(servers: &SharedServerList, remote_addr: &s
         for (key, server) in servers_lock.iter_mut() {
             if matches!(server.state.failure_record, FailureRecord::Unreliable) && !server.state.busy {
                 server.state.busy = true;
-                println!("🤖😇 Giving server {} ({}) a 3rd+ chance with client {}", key, server.name, remote_addr);
+                info!("Giving server {} ({}) a 3rd+ chance with client {}", key, server.name, remote_addr);
                 return Some(key.clone());
             }
         }
@@ -298,10 +299,10 @@ impl Drop for ServerGuard {
         if let Some(server) = servers_lock.get_mut(&self.key) {
             server.state.busy = false;
             if matches!(server.state.failure_record, FailureRecord::Reliable) {
-                println!("🟢 Server {} ({}) now available", self.key, server.name);
+                info!("Server {} ({}) is now available", self.key, server.name);
             }
             else {
-                println!("⚠️  Connection closed with Unreliable Server {} ({})", self.key, server.name);
+                info!("Connection closed with unreliable server {} ({})", self.key, server.name);
             }
             print_server_statuses(&servers_lock);
         }
@@ -338,11 +339,11 @@ where
                     if let Some(server) = servers_lock.get_mut(&self.key) {
                         if matches!(server.state.failure_record, FailureRecord::Reliable) {
                             server.state.failure_record = FailureRecord::Unreliable;
-                            println!("⛔😱 Server {} ({}) failed during streaming, now marked Unreliable. Error: {}", self.key, server.name, e);
+                            error!("Server {} ({}) failed during streaming, now marked Unreliable. Error: {}", self.key, server.name, e);
                         }
                         else {
                             server.state.failure_record = FailureRecord::SecondChanceGiven;
-                            println!("⛔😞 Unreliable server {} ({}) failed during streaming. Error: {}", self.key, server.name, e);
+                            error!("Unreliable server {} ({}) failed during streaming. Error: {}", self.key, server.name, e);
                         }
                         print_server_statuses(&servers_lock);
                     }
@@ -358,7 +359,7 @@ where
                     if let Some(server) = servers_lock.get_mut(&self.key) {
                         if !matches!(server.state.failure_record, FailureRecord::Reliable) {
                             server.state.failure_record = FailureRecord::Reliable;
-                            println!("🙏⚕️  Server {} ({}) has completed streaming successfully and is now marked Reliable", self.key, server.name);
+                            info!("Server {} ({}) completed streaming successfully and is now marked Reliable", self.key, server.name);
                             print_server_statuses(&servers_lock);
                         }
                     }
@@ -378,10 +379,10 @@ pub async fn handle_tags(
     let snaps = snapshot_servers(servers, true);
     let mut merged_models = HashMap::new();
     for snap in snaps.values() {
-        println!("server {} has {} models", snap.name, snap.models.len());
+        info!("Server {} has {} models", snap.name, snap.models.len());
         merged_models.extend(snap.models.clone());
     }
-    println!("totally we have {} models", merged_models.len());
+    info!("Total models: {}", merged_models.len());
     // collect all model details
     let models: Vec<Value> = merged_models.into_iter().map(|(_name, model)|
         model.unwrap().detail

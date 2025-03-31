@@ -5,6 +5,7 @@ use futures_util::stream::StreamExt;
 use futures_util::Stream;
 use std::pin::Pin;
 use chrono::Local;
+use tracing::{info, error};
 
 /// Runtime options for the backend request.
 #[derive(Clone, Copy)]
@@ -60,7 +61,7 @@ pub async fn send_request_monitored(
     let response = match request_builder.send().await {
         Ok(resp) => resp,
         Err(e) => {
-            println!("Error sending request to {}: {}", backend_url, e);
+            error!("Error sending request to {}: {}", backend_url, e);
             return Err(e.into());
         }
     };
@@ -87,13 +88,13 @@ pub async fn send_request_monitored(
                 }
             },
             Some(Err(e)) => {
-                println!("Error reading chunk from {}: {}", backend_url, e);
+                error!("Error reading chunk from {}: {}", backend_url, e);
                 break;
             },
             None => break,
         }
     }
-    println!("time: [{}] Server {} received {} bytes in {} seconds", Local::now().format("%Y-%m-%d %H:%M:%S"), backend_url, bytes_count, t1.as_secs());
+    info!("Backend {} received {} bytes in {} seconds", backend_url, bytes_count, t1.as_secs());
     let buf_stream = futures_util::stream::iter(vec![Ok(bytes::Bytes::from(buffer))]);
     stream = buf_stream.chain(stream).boxed();
     

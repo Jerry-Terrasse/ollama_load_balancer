@@ -8,10 +8,14 @@ mod utils;
 use futures_util::future;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Server, server::conn::AddrStream};
+use tracing_subscriber::fmt::time::FormatTime;
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 use clap::Parser;
 use ordermap::OrderMap;
+use tracing::info;
+use tracing_subscriber;
+use time::{self, macros::format_description};
 
 use config::Args;
 use state::{add_server, sync_server};
@@ -20,11 +24,20 @@ use backend::ReqOpt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // tracing_subscriber::fmt::init();
+    // my timer format: 03-31 15:10:11
+    let time_format = format_description!("[month]-[day] [hour]:[minute]:[second]");
+    let time_offset = time::UtcOffset::current_local_offset().unwrap_or_else(|_| time::UtcOffset::UTC);
+    let timer = tracing_subscriber::fmt::time::OffsetTime::new(time_offset, time_format);
+    tracing_subscriber::fmt()
+        .with_timer(timer)
+        .with_target(false)
+        // .with_file(true).with_line_number(true)
+        .init();
+
     let args = Args::parse();
 
-    println!("");
-    println!("⚙️  Timeout setting: t0={}, t1={}, timeout_load={}", args.t0, args.t1, args.timeout_load);
-    println!("");
+    info!("Timeout settings: t0={}, t1={}, timeout_load={}", args.t0, args.t1, args.timeout_load);
 
     let servers = Arc::new(Mutex::new(OrderMap::new()));
     args.servers.iter().for_each(|s| { add_server(servers.clone(), s); });
@@ -71,8 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Implement graceful shutdown
     let graceful = server.with_graceful_shutdown(shutdown_signal());
 
-    println!("👂 Ollama Load Balancer listening on http://{}", addr);
-    println!("");
+    info!("Ollama Load Balancer listening on http://{}", addr);
 
     if let Err(e) = graceful.await {
         return Err(e.into());
@@ -87,7 +99,7 @@ async fn shutdown_signal() {
         .await
         .expect("Failed to listen for ctrl_c");
 
-    println!("☠️  Received CTRL+C, shutting down gracefully...");
+    info!("Received CTRL+C, shutting down gracefully...");
     // The future returned by ctrl_c() will resolve when CTRL+C is pressed
     // Hyper will then stop accepting new connections
 }

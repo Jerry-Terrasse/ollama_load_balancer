@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use rand::{self, Rng};
+use tracing::{info, warn, error};
 
 use crate::config::ServerConfig;
 use crate::api::{api_tags, api_ps};
@@ -53,7 +54,7 @@ pub type SharedServerList = Arc<Mutex<OrderMap<String, OllamaServer>>>;
 
 /// Prints a nicely formatted list of the servers, their name, busy status, and reliability.
 pub fn print_server_statuses(servers: &OrderMap<String, OllamaServer>) {
-    println!("🗒  Current server statuses:");
+    info!("Current server statuses:");
     for (i, (address, srv)) in servers.iter().enumerate() {
         let busy_status = if srv.state.busy { "Busy" } else { "Available" };
         let reliability = match srv.state.failure_record {
@@ -61,22 +62,14 @@ pub fn print_server_statuses(servers: &OrderMap<String, OllamaServer>) {
             FailureRecord::Unreliable => "Unreliable",
             FailureRecord::SecondChanceGiven => "SecondChanceGiven",
         };
-        println!(
-            "{}. Address: {} ({}), Busy: {}, Reliability: {}",
-            i + 1,
-            address,
-            srv.name,
-            busy_status,
-            reliability
-        );
+        info!("{}. Address: {} ({}), Busy: {}, Reliability: {}", i + 1, address, srv.name, busy_status, reliability);
     }
-    println!("");
 }
 
 pub fn add_server(servers_shared: SharedServerList, server: &ServerConfig) {
     let mut servers = servers_shared.lock().unwrap();
     if servers.contains_key(&server.address) {
-        println!("Warning: Server {} already exists, updating name to {}", server.address, server.name);
+        warn!("Server {} already exists, updating name to {}", server.address, server.name);
         servers.get_mut(&server.address).unwrap().name = server.name.clone();
         return;
     }
@@ -90,16 +83,16 @@ pub fn add_server(servers_shared: SharedServerList, server: &ServerConfig) {
         models: HashMap::new(),
         actives: HashMap::new(),
     });
-    println!("Added server ({}) {} with name {}", servers.len(), server.address, server.name);
+    info!("Added server ({}) {} with name {}", servers.len(), server.address, server.name);
 }
 
 pub fn mark_server(servers: SharedServerList, target: &str, health: Health) {
     let mut servers = servers.lock().unwrap();
     if let Some(server) = servers.get_mut(target) {
         server.state.health = health;
-        println!("Marked server {} as dead", target);
+        info!("Marked server {} as dead", target);
     } else {
-        println!("Warning: Server {} not found", target);
+        warn!("Server {} not found", target);
     }
 }
 pub fn mark_server_dead(servers: SharedServerList, target: &str) {
@@ -121,7 +114,7 @@ pub async fn sync_server(
     let models = match models.await {
         Ok(models) => models,
         Err(e) => {
-            println!("Error fetching models from {}: {}", target, e);
+            warn!("Failed to fetch models from {}: {}", target, e);
             mark_server_dead(servers, target);
             return;
         }
@@ -130,7 +123,7 @@ pub async fn sync_server(
     let active_models = match active_models.await {
         Ok(active_models) => active_models,
         Err(e) => {
-            println!("Error fetching active models from {}: {}", target, e);
+            warn!("Failed to fetch active models from {}: {}", target, e);
             mark_server_dead(servers, target);
             return;
         }
@@ -141,9 +134,9 @@ pub async fn sync_server(
         server.models = models.into_iter().map(|m| (m.name.clone(), m)).collect();
         server.actives = active_models.into_iter().map(|m| (m.name.clone(), m)).collect();
         let active_summary = server.actives.keys().map(String::as_str).collect::<Vec<&str>>().join(", ");
-        println!("Synced server {}, found models: {}, active: [{}]", target, server.models.len(), active_summary);
+        info!("Synced server {}, found models: {} and active models: [{}]", target, server.models.len(), active_summary);
     } else {
-        println!("Warning: Server {} not found", target);
+        warn!("Server {} not found", target);
     }
 }
 
@@ -213,13 +206,12 @@ pub fn select_servers(
     let mut selected: Vec<(&str, Vec<&String>)> = Vec::new();
     let mut num_selected = 0;
 
-    // print server snaps
-    println!("Server snapshots:");
+    info!("Server snapshots:");
     for (addr, snap) in snaps.iter() {
         let actives = snap.actives.keys().map(|k| k.as_str()).collect::<Vec<&str>>().join(", ");
-        println!("> {}: health: {:?}, actives: [{}]", addr, snap.state.health, actives);
+        info!("> {}: health: {:?}, actives: [{}]", addr, snap.state.health, actives);
     }
-    println!("selecting min {} max {} resurrect {}", min_sel, max_sel, resurrect_n);
+    info!("Selecting servers with min: {} max: {} resurrect: {}", min_sel, max_sel, resurrect_n);
 
     // 1. choose from alive servers with the model activated
     let alives = snaps.iter().filter_map(|(addr, snap)| {
@@ -233,15 +225,9 @@ pub fn select_servers(
         snaps.get(name.as_str()).unwrap().actives.contains_key(&model)
     }).cloned().collect::<Vec<_>>();
     if actives.len() <= max_sel { 
-        selected.push((
-            "active",
-            actives
-        ));
+        selected.push(("active", actives));
     } else {
-        selected.push((
-            "active",
-            sample_by_health(&snaps, &actives, max_sel, &mut rng)
-        ));
+        selected.push(("active", sample_by_health(&snaps, &actives, max_sel, &mut rng)));
     }
     num_selected += selected.last().unwrap().1.len();
 
@@ -251,15 +237,9 @@ pub fn select_servers(
             !snaps.get(name.as_str()).unwrap().actives.contains_key(&model)
         }).cloned().collect::<Vec<_>>();
         if selected.len() + inactives.len() <= min_sel {
-            selected.push((
-                "inactive",
-                inactives
-            ));
+            selected.push(("inactive", inactives));
         } else {
-            selected.push((
-                "inactive",
-                sample_by_health(&snaps, &inactives, min_sel - selected.len(), &mut rng)
-            ));
+            selected.push(("inactive", sample_by_health(&snaps, &inactives, min_sel - selected.len(), &mut rng)));
         }
         num_selected += selected.last().unwrap().1.len();
     }
@@ -276,10 +256,7 @@ pub fn select_servers(
                 None
             }
         }).collect::<Vec<_>>();
-        selected.push((
-            "resurrect",
-            sample_by_health(&snaps, &deads, resurrect_n, &mut rng)
-        ));
+        selected.push(("resurrect", sample_by_health(&snaps, &deads, resurrect_n, &mut rng)));
         num_selected += selected.last().unwrap().1.len();
     }
 
@@ -292,7 +269,7 @@ pub fn select_servers(
             format!("> {} (0): none", tag)
         }
     }).collect::<Vec<String>>().join("\n");
-    println!("Selected {} servers for model {}:\n{}", num_selected, model, summary);
+    info!("Selected {} servers for model {}: {}", num_selected, model, summary);
 
     selected.into_iter().flat_map(|(_, addrs)| addrs).map(|s| s.clone()).collect()
 }
