@@ -60,14 +60,11 @@ pub async fn dispatch(
             .unwrap()
         ),
         "/api/tags" => handle_tags(req, servers, remote_addr).await,
-        "/api/show" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
+        "/api/show" => handle_return_501(req, servers, remote_addr, "/api/show is not implemented").await, // TODO
+        // "/api/show" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
         "/api/generate" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
         "/api/chat" => handle_chat_parallel(req, servers, remote_addr, opts).await,
-        _ => Ok(Response::builder()
-            .status(StatusCode::NOT_IMPLEMENTED)
-            .body(Body::from(format!("Path {} is not implemented", path)))
-            .unwrap()
-        ),
+        _ => handle_return_501(req, servers, remote_addr, format!("Endpoint {} is not implemented", path).as_str()).await,
     };
     let status = response.as_ref().map(|r| r.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     info!("{} - {} {} - {} {}", remote, method, path, status.as_u16(), status.canonical_reason().unwrap_or("Unknown"));
@@ -392,6 +389,21 @@ pub async fn handle_tags(
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
         .body(Body::from(response_body))
+        .unwrap()
+    )
+}
+
+pub async fn handle_return_501(
+    _req: Request<Body>,
+    _servers: SharedServerList,
+    _remote_addr: std::net::SocketAddr,
+    msg: &str,
+) -> Result<Response<Body>, Infallible> {
+    let json_body = serde_json::to_string(&json!({ "error": msg })).unwrap();
+    Ok(Response::builder()
+        .status(StatusCode::NOT_IMPLEMENTED)
+        .header("Content-Type", "application/json")
+        .body(Body::from(json_body))
         .unwrap()
     )
 }

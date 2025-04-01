@@ -8,7 +8,6 @@ mod utils;
 use futures_util::future;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Server, server::conn::AddrStream};
-use tracing_subscriber::fmt::time::FormatTime;
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 use clap::Parser;
