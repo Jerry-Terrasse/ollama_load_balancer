@@ -204,7 +204,7 @@ pub fn select_servers(
 
     let snaps = snapshot_servers(servers, false);
     let mut selected: Vec<(&str, Vec<&String>)> = Vec::new();
-    let mut num_selected = 0;
+    let mut num_selected = 0; // NOTE: num_selected means not selected.len()
 
     info!("Server snapshots:");
     for (addr, snap) in snaps.iter() {
@@ -236,10 +236,10 @@ pub fn select_servers(
         let inactives = alives.iter().filter(|name| {
             !snaps.get(name.as_str()).unwrap().actives.contains_key(&model)
         }).cloned().collect::<Vec<_>>();
-        if selected.len() + inactives.len() <= min_sel {
+        if num_selected + inactives.len() <= min_sel {
             selected.push(("inactive", inactives));
         } else {
-            selected.push(("inactive", sample_by_health(&snaps, &inactives, min_sel - selected.len(), &mut rng)));
+            selected.push(("inactive", sample_by_health(&snaps, &inactives, min_sel - num_selected, &mut rng)));
         }
         num_selected += selected.last().unwrap().1.len();
     }
@@ -269,7 +269,7 @@ pub fn select_servers(
             format!("> {} (0): none", tag)
         }
     }).collect::<Vec<String>>().join("\n");
-    info!("Selected {} servers for model {}: {}", num_selected, model, summary);
+    info!("Selected {} servers for model {}:\n{}", num_selected, model, summary);
 
     selected.into_iter().flat_map(|(_, addrs)| addrs).map(|s| s.clone()).collect()
 }
