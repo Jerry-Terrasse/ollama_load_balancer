@@ -1,7 +1,7 @@
 use crate::state::ModelConfig;
 use reqwest::Method;
 
-use crate::backend::{send_request, ReqOpt};
+use crate::backend::send_request;
 
 pub async fn api_tags(
     backend_url: &str, timeout_secs: u32

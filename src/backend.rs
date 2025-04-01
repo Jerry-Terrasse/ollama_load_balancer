@@ -4,7 +4,6 @@ use hyper;
 use futures_util::stream::StreamExt;
 use futures_util::Stream;
 use std::pin::Pin;
-use chrono::Local;
 use tracing::{info, error};
 
 /// Runtime options for the backend request.
@@ -33,7 +32,7 @@ pub async fn send_request_monitored(
     backend_url: &str,
     opts: ReqOpt,
 ) -> Result<(PerformanceInfo, RepackedResponse), Box<dyn std::error::Error + Send + Sync>> {
-    let (uri, req_method, path, headers, whole_body) = req;
+    let (uri, req_method, _path, headers, whole_body) = req;
     let uri = format!("{}{}", backend_url, uri);
 
     let mut builder = Client::builder()
@@ -115,7 +114,7 @@ pub async fn send_request(
     backend_url: &str,
     timeout_secs: u32,
 ) -> Result<reqwest::Response, Box<dyn std::error::Error + Send + Sync>> {
-    let (uri, req_method, path, headers, whole_body) = req;
+    let (uri, req_method, _path, headers, whole_body) = req;
     let uri = format!("{}{}", backend_url, uri);
 
     let mut builder = reqwest::Client::builder().connect_timeout(Duration::from_secs(1));
