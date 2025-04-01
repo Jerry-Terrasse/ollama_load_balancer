@@ -13,6 +13,7 @@ pub struct ReqOpt {
     pub t0: u32,
     pub t1: u32,
 }
+#[derive(Debug)]
 pub struct PerformanceInfo {
     pub first_token_time: Instant,
     // TODO: we can't use token/s because float is not supported by max_by_key
@@ -23,6 +24,23 @@ pub struct RepackedResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub stream: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
+}
+
+impl RepackedResponse {
+    pub async fn into_string(self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let max_preview = 100;
+        let mut body = String::new();
+        let mut stream = self.stream;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            body.push_str(&String::from_utf8_lossy(&chunk));
+            if body.len() > max_preview {
+                body.push_str("...");
+                break;
+            }
+        }
+        Ok(format!("RepackedResponse {{ status: {:?}, headers: {:?}, body: \"{}\" }}", self.status, self.headers, body))
+    }
 }
 
 pub type UnpackedRequest = (String, Method, String, Option<hyper::HeaderMap>, Option<bytes::Bytes>);
