@@ -214,8 +214,9 @@ pub fn select_servers(
     info!("Selecting servers with min: {} max: {} resurrect: {}", min_sel, max_sel, resurrect_n);
 
     // 1. choose from alive servers with the model activated
+    // NOTE: servers that are alive but do not have the target model are NEVER selected
     let alives = snaps.iter().filter_map(|(addr, snap)| {
-        if snap.state.health != Health::Dead {
+        if snap.state.health != Health::Dead && snap.models.contains_key(&model) {
             Some(addr)
         } else {
             None
