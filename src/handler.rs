@@ -62,7 +62,7 @@ pub async fn dispatch(
         "/api/tags" => handle_tags(req, servers, remote_addr).await,
         "/api/show" => handle_return_501(req, servers, remote_addr, "/api/show is not implemented").await, // TODO
         // "/api/show" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
-        "/api/generate" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
+        "/api/generate" => handle_generate(req, servers, remote_addr).await,
         "/api/chat" => handle_chat_parallel(req, servers, remote_addr, opts).await,
         _ => handle_return_501(req, servers, remote_addr, format!("Endpoint {} is not implemented", path).as_str()).await,
     };
@@ -389,6 +389,68 @@ pub async fn handle_tags(
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
         .body(Body::from(response_body))
+        .unwrap()
+    )
+}
+
+pub async fn handle_generate(
+    req: Request<Body>,
+    _servers: SharedServerList,
+    _remote_addr: std::net::SocketAddr,
+) -> Result<Response<Body>, Infallible> {
+    let unpacked_req = match unpack_req(req).await {
+        Ok(req) => req,
+        Err(e) => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from(format!("Error handling request: {}", e)))
+                .unwrap());
+        }
+    };
+    let body_bytes = unpacked_req.4.as_ref().unwrap();
+    let body = match parse_body(body_bytes) {
+        Ok(body) => body,
+        Err(e) => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from(format!("Error parsing request body: {}", e)))
+                .unwrap());
+        }
+    };
+
+    let resp_501: fn(&Value, &str) -> Result<Response<Body>, Infallible> = |body, msg| {
+        error!("Invalid request body: {}", body);
+        let json_body = serde_json::to_string(&json!({ "error": msg })).unwrap();
+        Ok(Response::builder()
+            .status(StatusCode::NOT_IMPLEMENTED)
+            .header("Content-Type", "application/json")
+            .body(Body::from(json_body))
+            .unwrap()
+        )
+    };
+
+    if !body.is_object() {
+        return resp_501(&body, "Request body must be a JSON object");
+    }
+    let map = body.as_object().unwrap();
+    if !map.contains_key("model") || !map.contains_key("prompt") {
+        return resp_501(&body, "Request body must contain 'model' and 'prompt' fields");
+    }
+    let model = map.get("model").unwrap().as_str().unwrap();
+    let prompt = map.get("prompt").unwrap().as_str().unwrap();
+    // currently only empty prompt is supported
+    if !prompt.is_empty() {
+        return resp_501(&body, "Non-empty 'prompt' field is not supported yet");
+    }
+
+    let res = json!({
+        "model": model,
+    });
+    let json_body = serde_json::to_string(&res).unwrap();
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(json_body))
         .unwrap()
     )
 }
