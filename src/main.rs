@@ -54,7 +54,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sync_tasks = server_addrs.into_iter().map(
         |s| tokio::spawn(sync_server(servers.clone(), s, 5))
     ).collect::<Vec<_>>();
-    future::join_all(sync_tasks).await;
+    let healths = future::join_all(sync_tasks).await;
+
+    let (healthy, dead): (Vec<_>, Vec<_>) = healths
+        .into_iter().partition(|h|
+            *h.as_ref().unwrap_or(&state::Health::Dead) != state::Health::Dead);
+    info!("Initial health summary: {} healthy, {} dead", healthy.len(), dead.len());
 
     let global_opts = ReqOpt {
         timeout_load: args.timeout_load,

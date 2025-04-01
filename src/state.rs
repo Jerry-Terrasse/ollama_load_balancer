@@ -101,12 +101,50 @@ pub fn mark_server_dead(servers: SharedServerList, target: &str) {
 pub fn mark_server_healthy(servers: SharedServerList, target: &str, health: f32) {
     mark_server(servers, target, Health::Healthy(health));
 }
+pub fn mark_server_more_healthy(servers: SharedServerList, target: &str, is_best: bool) {
+    let h_inc = if is_best { 4.0 } else { 2.0 };
+    let mut servers = servers.lock().unwrap();
+    if let Some(server) = servers.get_mut(target) {
+        if let Health::Healthy(h) = server.state.health {
+            server.state.health = Health::Healthy(h + h_inc);
+        } else {
+            info!("Server {} is resurrected", target);
+            server.state.health = Health::Healthy(1.0);
+        }
+        info!(
+            "Marked server {} as more healthy{}, now: {:?}", 
+            target,
+            if is_best { " (best)" } else { "" },
+            server.state.health
+        );
+    } else {
+        warn!("Server {} not found", target);
+    }
+}
+pub fn mark_server_less_healthy(servers: SharedServerList, target: &str) {
+    let h_div = 2.0;
+    let mut servers = servers.lock().unwrap();
+    if let Some(server) = servers.get_mut(target) {
+        if let Health::Healthy(h) = server.state.health {
+            let new_h = h / h_div;
+            if new_h < 1.0 {
+                info!("Server {} passed away", target);
+                server.state.health = Health::Dead;
+            } else {
+                server.state.health = Health::Healthy(new_h);
+            }
+        }
+        info!("Marked server {} as less healthy, now: {:?}", target, server.state.health);
+    } else {
+        warn!("Server {} not found", target);
+    }
+}
 
 pub async fn sync_server(
     servers: SharedServerList,
     target: String,
     timeout_secs: u32,
-) {
+) -> Health {
     let target = target.as_str();
     let models = api_tags(target, timeout_secs);
     let active_models = api_ps(target, timeout_secs); // send this request ahead
@@ -116,7 +154,7 @@ pub async fn sync_server(
         Err(e) => {
             warn!("Failed to fetch models from {}: {}", target, e);
             mark_server_dead(servers, target);
-            return;
+            return Health::Dead;
         }
     };
 
@@ -125,7 +163,7 @@ pub async fn sync_server(
         Err(e) => {
             warn!("Failed to fetch active models from {}: {}", target, e);
             mark_server_dead(servers, target);
-            return;
+            return Health::Dead;
         }
     };
 
@@ -133,10 +171,15 @@ pub async fn sync_server(
     if let Some(server) = servers.get_mut(target) {
         server.models = models.into_iter().map(|m| (m.name.clone(), m)).collect();
         server.actives = active_models.into_iter().map(|m| (m.name.clone(), m)).collect();
+        server.state.health = Health::Healthy(1.0); // default to 1.0
         let active_summary = server.actives.keys().map(String::as_str).collect::<Vec<&str>>().join(", ");
-        info!("Synced server {}, found models: {} and active models: [{}]", target, server.models.len(), active_summary);
+        let model_summary = server.models.keys().map(String::as_str).collect::<Vec<&str>>().join(", ");
+        info!("Synced server {}, found models: {}\n> All models: [{}]\n> Active models: [{}]",
+            target, server.models.len(), model_summary, active_summary);
+        Health::Healthy(1.0)
     } else {
         warn!("Server {} not found", target);
+        Health::Dead
     }
 }
 

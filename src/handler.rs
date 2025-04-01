@@ -1,4 +1,8 @@
-use crate::state::{print_server_statuses, select_servers, snapshot_servers, sync_server, FailureRecord, SelOpt, SharedServerList};
+use crate::state::{
+    mark_server_more_healthy, mark_server_less_healthy,
+    print_server_statuses, select_servers, snapshot_servers, sync_server,
+    FailureRecord, SelOpt, SharedServerList
+};
 use crate::backend::{UnpackedRequest, ReqOpt, send_request_monitored, send_request};
 use hyper::{Body, Request, Response, StatusCode};
 use serde_json::Value;
@@ -195,8 +199,8 @@ pub async fn handle_chat_parallel(
     let results = future::join_all(tasks).await;
     // firstly, partition the results into successful and failed
     let (ok_results, failed_results): (Vec<_>, Vec<_>) = 
-        results.into_iter().partition(|res|
-        if let Ok(Ok((_perf, repacked))) = res {
+        results.into_iter().zip(selected_keys).partition(|res_server|
+        if let (Ok(Ok((_perf, repacked))), _) = res_server {
             repacked.status.is_success()
         } else {
             false
@@ -205,26 +209,28 @@ pub async fn handle_chat_parallel(
 
     if failed_results.len() > 0 {
         warn!("{} parallel requests failed", failed_results.len());
-        // log failed requests asynchrously
+        // log failed requests & mark less healthy asynchrously
+        let servers = servers.clone();
         tokio::spawn(async move {
-            for failed in failed_results {
-                match failed {
+            for (res, server) in failed_results {
+                mark_server_less_healthy(servers.clone(), &server);
+                match res {
                     Err(e) => {
-                        error!("Parallel request failed: {:?}", e);
+                        warn!("Parallel request failed: {:?}", e);
                     },
                     Ok(Err(e)) => {
-                        error!("Parallel request failed: {:?}", e);
+                        warn!("Parallel request failed: {:?}", e);
                     },
                     Ok(Ok((perf, repacked))) => {
-                        error!("Parallel request failed: Performance: {:?}, Response: {:?}", perf, repacked.into_string().await);
+                        warn!("Parallel request failed: Performance: {:?}, Response: {:?}", perf, repacked.into_string().await);
                     },
-                    _ => {},
                 }
             }
         });
     }
 
-    let best = ok_results.into_iter().zip(selected_keys.into_iter()).filter_map(|res_server|
+    let ok_servers = ok_results.iter().map(|res_server| res_server.1.clone()).collect::<Vec<String>>();
+    let best = ok_results.into_iter().filter_map(|res_server|
         if let Ok(Ok((perf, repacked))) = res_server.0 {
             Some((perf, repacked, res_server.1))
         } else {
@@ -232,8 +238,20 @@ pub async fn handle_chat_parallel(
         }
     ).max_by_key(|(perf, _, _)| perf.duration_tokens);
     
-    if let Some((_, resp, server)) = best {
-        info!("Chosen server {} to serve client {}", server, remote_addr);
+    if let Some((_, resp, best_server)) = best {
+        // mark more healthy asynchronously
+        let best_server_clone = best_server.clone();
+        let servers = servers.clone();
+        tokio::spawn(async move {
+            mark_server_more_healthy(servers.clone(), &best_server_clone, true);
+            for server in ok_servers {
+                if server != best_server_clone {
+                    mark_server_more_healthy(servers.clone(), &server, false);
+                }
+            }
+        });
+
+        info!("Chosen server {} to serve client {}", best_server, remote_addr);
         let mut resp_builder = Response::builder().status(u16::from(resp.status));
         for (k, v) in resp.headers.iter() {
             resp_builder = resp_builder.header(k.to_string(), v.to_str().unwrap());
