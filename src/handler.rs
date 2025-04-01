@@ -1,5 +1,5 @@
 use crate::state::{print_server_statuses, select_servers, snapshot_servers, FailureRecord, SelOpt, SharedServerList};
-use crate::backend::{UnpackedRequest, ReqOpt, send_request_monitored};
+use crate::backend::{UnpackedRequest, ReqOpt, send_request_monitored, send_request};
 use hyper::{Body, Request, Response, StatusCode};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -60,8 +60,7 @@ pub async fn dispatch(
             .unwrap()
         ),
         "/api/tags" => handle_tags(req, servers, remote_addr).await,
-        "/api/show" => handle_return_501(req, servers, remote_addr, "/api/show is not implemented").await, // TODO
-        // "/api/show" => handle_request(req, servers, remote_addr, opts.timeout_load).await, // TODO
+        "/api/show" => handle_request_ha(req, servers, remote_addr, opts).await,
         "/api/generate" => handle_generate(req, servers, remote_addr).await,
         "/api/chat" => handle_chat_parallel(req, servers, remote_addr, opts).await,
         _ => handle_return_501(req, servers, remote_addr, format!("Endpoint {} is not implemented", path).as_str()).await,
@@ -106,7 +105,7 @@ pub async fn handle_request(
         key: key.clone(),
     };
 
-    match crate::backend::send_request(unpacked_req, &key, timeout_secs).await {
+    match send_request(unpacked_req, &key, timeout_secs).await {
         Ok(response) => {
             let status = response.status();
             let mut resp_builder = Response::builder().status(u16::from(status));
@@ -146,6 +145,78 @@ pub async fn handle_request(
             Ok(response)
         }
     }
+}
+
+// Handle request with high availability
+pub async fn handle_request_ha(
+    req: Request<Body>,
+    servers: SharedServerList,
+    remote_addr: std::net::SocketAddr,
+    opts: ReqOpt,
+) -> Result<Response<Body>, Infallible> {
+    let unpacked_req = match unpack_req(req).await {
+        Ok(req) => req,
+        Err(e) => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from(format!("Error handling request: {}", e)))
+                .unwrap());
+        }
+    };
+
+    let body = match parse_body(unpacked_req.4.as_ref().unwrap()) {
+        Ok(body) => body,
+        Err(e) => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from(format!("Error parsing request body: {}", e)))
+                .unwrap());
+        }
+    };
+    let model = match body["model"].as_str() {
+        Some(model) => model,
+        None => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::from("Request body must contain a 'model' field"))
+                .unwrap());
+        }
+    };
+    let selected_keys = select_servers(servers.clone(), model.to_string(), SelOpt {
+        count: (3, 6),
+        resurrect_p: 0.1,
+        resurrect_n: 1,
+    });
+    if selected_keys.is_empty() {
+        return Ok(Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .body(Body::from("No available servers"))
+            .unwrap());
+    }
+
+    for server_url in selected_keys {
+        match send_request(unpacked_req.clone(), &server_url, opts.t0).await {
+            Ok(response) => {
+                info!("Chosen server {} to serve client {}", server_url, remote_addr);
+                let status = response.status();
+                let mut resp_builder = Response::builder().status(u16::from(status));
+                for (key_h, value) in response.headers() {
+                    resp_builder = resp_builder.header(key_h.to_string(), value.to_str().unwrap());
+                }
+                let stream = response.bytes_stream().boxed();
+                return Ok(resp_builder.body(Body::wrap_stream(stream)).unwrap());
+            },
+            Err(e) => {
+                warn!("Sequential request to server {} failed: {:?}", server_url, e);
+                continue;
+            }
+        }
+    }
+    Ok(Response::builder()
+        .status(StatusCode::SERVICE_UNAVAILABLE)
+        .body(Body::from("All chosen backends failed"))
+        .unwrap()
+    )
 }
 
 pub async fn handle_chat_parallel(
