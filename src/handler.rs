@@ -44,6 +44,18 @@ fn parse_body(body: &bytes::Bytes) -> Result<Value, Box<dyn std::error::Error>> 
     Ok(body)
 }
 
+fn make_json_resp(
+    status: StatusCode,
+    body: Value,
+) -> Response<Body> {
+    let json_body = serde_json::to_string(&body).unwrap();
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .body(Body::from(json_body))
+        .unwrap()
+}
+
 pub async fn dispatch(
     req: Request<Body>,
     servers: SharedServerList,
@@ -80,29 +92,20 @@ pub async fn handle_request_ha(
     let unpacked_req = match unpack_req(req).await {
         Ok(req) => req,
         Err(e) => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from(format!("Error handling request: {}", e)))
-                .unwrap());
+            return Ok(make_json_resp(StatusCode::BAD_REQUEST, json!({ "error": format!("Error handling request: {}", e) })));
         }
     };
 
     let body = match parse_body(unpacked_req.4.as_ref().unwrap()) {
         Ok(body) => body,
         Err(e) => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from(format!("Error parsing request body: {}", e)))
-                .unwrap());
+            return Ok(make_json_resp(StatusCode::BAD_REQUEST, json!({ "error": format!("Error parsing request body: {}", e) })));
         }
     };
     let model = match body["model"].as_str() {
         Some(model) => model,
         None => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Request body must contain a 'model' field"))
-                .unwrap());
+            return Ok(make_json_resp(StatusCode::BAD_REQUEST, json!({ "error": "Request body must contain a 'model' field" })));
         }
     };
     let selected_keys = select_servers(servers.clone(), model.to_string(), SelOpt {
@@ -111,10 +114,7 @@ pub async fn handle_request_ha(
         resurrect_n: 1,
     });
     if selected_keys.is_empty() {
-        return Ok(Response::builder()
-            .status(StatusCode::SERVICE_UNAVAILABLE)
-            .body(Body::from("No available servers"))
-            .unwrap());
+        return Ok(make_json_resp(StatusCode::SERVICE_UNAVAILABLE, json!({ "error": "No available servers" })));
     }
 
     for server_url in selected_keys {
@@ -151,29 +151,20 @@ pub async fn handle_chat_parallel(
     let unpacked_req = match unpack_req(req).await {
         Ok(req) => req,
         Err(e) => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from(format!("Error handling request: {}", e)))
-                .unwrap());
+            return Ok(make_json_resp(StatusCode::BAD_REQUEST, json!({ "error": format!("Error handling request: {}", e) })));
         }
     };
 
     let body = match parse_body(unpacked_req.4.as_ref().unwrap()) {
         Ok(body) => body,
         Err(e) => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from(format!("Error parsing request body: {}", e)))
-                .unwrap());
+            return Ok(make_json_resp(StatusCode::BAD_REQUEST, json!({ "error": format!("Error parsing request body: {}", e) })));
         }
     };
     let model = match body["model"].as_str() {
         Some(model) => model,
         None => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Request body must contain a 'model' field"))
-                .unwrap());
+            return Ok(make_json_resp(StatusCode::BAD_REQUEST, json!({ "error": "Request body must contain a 'model' field" })));
         }
     };
     let selected_keys = select_servers(servers.clone(), model.to_string(), SelOpt {
@@ -182,11 +173,7 @@ pub async fn handle_chat_parallel(
         resurrect_n: 1,
     });
     if selected_keys.is_empty() {
-        let response = Response::builder()
-            .status(StatusCode::SERVICE_UNAVAILABLE)
-            .body(Body::from("No available servers"))
-            .unwrap();
-        return Ok(response);
+        return Ok(make_json_resp(StatusCode::SERVICE_UNAVAILABLE, json!({ "error": "No available servers" })));
     }
 
     let tasks: Vec<_> = selected_keys.iter().map(|server_url| {
@@ -323,13 +310,7 @@ pub async fn handle_tags(
     let models: Vec<Value> = merged_models.into_iter().map(|(_name, model)|
         model.unwrap().detail
     ).collect();
-    let response_body = serde_json::to_string(&json!({ "models": models })).unwrap();
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", "application/json")
-        .body(Body::from(response_body))
-        .unwrap()
-    )
+    return Ok(make_json_resp(StatusCode::OK, json!({ "models": models })));
 }
 
 pub async fn handle_generate(
@@ -359,13 +340,7 @@ pub async fn handle_generate(
 
     let resp_501: fn(&Value, &str) -> Result<Response<Body>, Infallible> = |body, msg| {
         error!("Invalid request body: {}", body);
-        let json_body = serde_json::to_string(&json!({ "error": msg })).unwrap();
-        Ok(Response::builder()
-            .status(StatusCode::NOT_IMPLEMENTED)
-            .header("Content-Type", "application/json")
-            .body(Body::from(json_body))
-            .unwrap()
-        )
+        Ok(make_json_resp(StatusCode::NOT_IMPLEMENTED, json!({ "error": msg })))
     };
 
     if !body.is_object() {
@@ -385,13 +360,7 @@ pub async fn handle_generate(
     let res = json!({
         "model": model,
     });
-    let json_body = serde_json::to_string(&res).unwrap();
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", "application/json")
-        .body(Body::from(json_body))
-        .unwrap()
-    )
+    Ok(make_json_resp(StatusCode::OK, res))
 }
 
 pub async fn handle_return_501(
@@ -400,11 +369,5 @@ pub async fn handle_return_501(
     _remote_addr: std::net::SocketAddr,
     msg: &str,
 ) -> Result<Response<Body>, Infallible> {
-    let json_body = serde_json::to_string(&json!({ "error": msg })).unwrap();
-    Ok(Response::builder()
-        .status(StatusCode::NOT_IMPLEMENTED)
-        .header("Content-Type", "application/json")
-        .body(Body::from(json_body))
-        .unwrap()
-    )
+    Ok(make_json_resp(StatusCode::NOT_IMPLEMENTED, json!({ "error": msg })))
 }
