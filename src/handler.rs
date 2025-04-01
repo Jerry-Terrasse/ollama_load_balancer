@@ -1,4 +1,4 @@
-use crate::state::{print_server_statuses, select_servers, snapshot_servers, FailureRecord, SelOpt, SharedServerList};
+use crate::state::{print_server_statuses, select_servers, snapshot_servers, sync_server, FailureRecord, SelOpt, SharedServerList};
 use crate::backend::{UnpackedRequest, ReqOpt, send_request_monitored, send_request};
 use hyper::{Body, Request, Response, StatusCode};
 use serde_json::Value;
@@ -102,12 +102,15 @@ pub async fn handle_request_ha(
             return Ok(make_json_resp(StatusCode::BAD_REQUEST, json!({ "error": format!("Error parsing request body: {}", e) })));
         }
     };
-    let model = match body["model"].as_str() {
-        Some(model) => model,
-        None => {
-            return Ok(make_json_resp(StatusCode::BAD_REQUEST, json!({ "error": "Request body must contain a 'model' field" })));
-        }
+    let model = body["model"].as_str().unwrap_or_default();
+    let model = if model.is_empty() {
+        body["name"].as_str().unwrap_or_default()
+    } else {
+        model
     };
+    if model.is_empty() {
+        return Ok(make_json_resp(StatusCode::BAD_REQUEST, json!({ "error": "Request body must contain a 'model' field" })));
+    }
     let selected_keys = select_servers(servers.clone(), model.to_string(), SelOpt {
         count: (3, 6),
         resurrect_p: 0.1,
@@ -135,11 +138,7 @@ pub async fn handle_request_ha(
             }
         }
     }
-    Ok(Response::builder()
-        .status(StatusCode::SERVICE_UNAVAILABLE)
-        .body(Body::from("All chosen backends failed"))
-        .unwrap()
-    )
+    Ok(make_json_resp(StatusCode::SERVICE_UNAVAILABLE, json!({ "error": "All chosen backends failed" })))
 }
 
 pub async fn handle_chat_parallel(
@@ -179,13 +178,53 @@ pub async fn handle_chat_parallel(
     let tasks: Vec<_> = selected_keys.iter().map(|server_url| {
         let req = unpacked_req.clone();
         let url = server_url.clone();
+        let servers = servers.clone();
         tokio::spawn(async move {
-            send_request_monitored(req, &url, opts).await
+            let health = sync_server(servers, url.to_owned(), opts.t0).await;
+            if health == crate::state::Health::Dead {
+                warn!("Server {} is dead", url);
+                return Err(Box::<dyn std::error::Error + Send + Sync>::from(
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("Server {} is dead", url))
+                ));
+            }
+            info!("Server {} is healthy", url);
+            send_request_monitored(req, url.as_str(), opts).await
         })
     }).collect();
 
     let results = future::join_all(tasks).await;
-    let best = results.into_iter().zip(selected_keys.into_iter()).filter_map(|res_server|
+    // firstly, partition the results into successful and failed
+    let (ok_results, failed_results): (Vec<_>, Vec<_>) = 
+        results.into_iter().partition(|res|
+        if let Ok(Ok((_perf, repacked))) = res {
+            repacked.status.is_success()
+        } else {
+            false
+        }
+    );
+
+    if failed_results.len() > 0 {
+        warn!("{} parallel requests failed", failed_results.len());
+        // log failed requests asynchrously
+        tokio::spawn(async move {
+            for failed in failed_results {
+                match failed {
+                    Err(e) => {
+                        error!("Parallel request failed: {:?}", e);
+                    },
+                    Ok(Err(e)) => {
+                        error!("Parallel request failed: {:?}", e);
+                    },
+                    Ok(Ok((perf, repacked))) => {
+                        error!("Parallel request failed: Performance: {:?}, Response: {:?}", perf, repacked.into_string().await);
+                    },
+                    _ => {},
+                }
+            }
+        });
+    }
+
+    let best = ok_results.into_iter().zip(selected_keys.into_iter()).filter_map(|res_server|
         if let Ok(Ok((perf, repacked))) = res_server.0 {
             Some((perf, repacked, res_server.1))
         } else {
@@ -203,11 +242,7 @@ pub async fn handle_chat_parallel(
         let response = resp_builder.body(hyper_body).unwrap();
         Ok(response)
     } else {
-        let response = Response::builder()
-            .status(StatusCode::BAD_GATEWAY)
-            .body(Body::from("All parallel requests failed"))
-            .unwrap();
-        Ok(response)
+        Ok(make_json_resp(StatusCode::SERVICE_UNAVAILABLE, json!({ "error": "All parallel requests failed" })))
     }
 }
 
@@ -321,20 +356,14 @@ pub async fn handle_generate(
     let unpacked_req = match unpack_req(req).await {
         Ok(req) => req,
         Err(e) => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from(format!("Error handling request: {}", e)))
-                .unwrap());
+            return Ok(make_json_resp(StatusCode::BAD_REQUEST, json!({ "error": format!("Error handling request: {}", e) })));
         }
     };
     let body_bytes = unpacked_req.4.as_ref().unwrap();
     let body = match parse_body(body_bytes) {
         Ok(body) => body,
         Err(e) => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from(format!("Error parsing request body: {}", e)))
-                .unwrap());
+            return Ok(make_json_resp(StatusCode::BAD_REQUEST, json!({ "error": format!("Error parsing request body: {}", e) })));
         }
     };
 
