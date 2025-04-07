@@ -92,6 +92,10 @@ These endpoints are specific to the load balancer and are not part of the standa
   - [ ] `/status`
   - [ ] `/add_server`
   - [ ] `/sync_servers`
+- [ ] Simple test on different platforms
+  - [x] Linux
+  - [ ] MacOS
+  - [ ] Windows
 - [ ] Fatest-Finish-First (F3) policy
 - [ ] Try hacking some info into ollama cli for convenience
 - [ ] Support authentication
