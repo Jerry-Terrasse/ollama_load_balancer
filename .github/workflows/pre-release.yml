@@ -31,9 +31,21 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
     
-    - name: list files
-      run: ls -la ./target/release
+    - name: rename executable
+      run: |
+        if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+          mv -v ./target/release/ollama_load_balancer ./ollama_load_balancer_linux
+          echo "exec_path=./ollama_load_balancer_linux" >> $GITHUB_ENV
+        fi
+        if [ "${{ matrix.os }}" == "macos-latest" ]; then
+          mv -v ./target/release/ollama_load_balancer ./ollama_load_balancer_macos
+          echo "exec_path=./ollama_load_balancer_macos" >> $GITHUB_ENV
+        fi
+        if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          mv -v ./target/release/ollama_load_balancer.exe ./ollama_load_balancer_windows.exe
+          echo "exec_path=./ollama_load_balancer_windows.exe" >> $GITHUB_ENV
+        fi
     - name: Pre-Release
       uses: softprops/action-gh-release@v2
       with:
-        files: ./target/release/ollama_load_balancer
+        files: $GITHUB_ENV.exec_path
