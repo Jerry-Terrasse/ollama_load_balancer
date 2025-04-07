@@ -84,7 +84,7 @@ These endpoints are specific to the load balancer and are not part of the standa
 
 ### TODO List
 
-- [ ] Use GitHub actions to build and release
+- [x] Use GitHub actions to build and release
 - [ ] Implement Ollama compatible endpoints
   - [ ] `/api/ps`
   - [ ] `/api/generate` (full support)
@@ -102,12 +102,13 @@ These endpoints are specific to the load balancer and are not part of the standa
 
 ## Release Notes
 
-### 2.6 (WIP)
+### 2.6
 
 - feat: refactor timeout and performance mechanism, small requests are faster
 - chore: add own README version
 - chore: add TODO list
 - chore: add release workflow with GitHub actions
+- chore: use cache to speed up the workflow
 
 ### 2.5
 
