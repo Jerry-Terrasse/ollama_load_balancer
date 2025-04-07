@@ -35,8 +35,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let args = Args::parse();
+    let global_opts = ReqOpt {
+        timeout: args.timeout,
+        timeout_ft: args.timeout_ft,
+        time_measure: args.time_measure,
+    };
 
-    info!("Timeout settings: t0={}, t1={}, timeout_load={}", args.t0, args.t1, args.timeout_load);
+    info!("Timeout settings: {:?}", global_opts);
 
     let servers = Arc::new(Mutex::new(OrderMap::new()));
     args.servers.iter().for_each(|s| { add_server(servers.clone(), s); });
@@ -52,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // initialize all servers
     let sync_tasks = server_addrs.into_iter().map(
-        |s| tokio::spawn(sync_server(servers.clone(), s, 5))
+        |s| tokio::spawn(sync_server(servers.clone(), s, global_opts.timeout))
     ).collect::<Vec<_>>();
     let healths = future::join_all(sync_tasks).await;
 
@@ -60,12 +65,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into_iter().partition(|h|
             *h.as_ref().unwrap_or(&state::Health::Dead) != state::Health::Dead);
     info!("Initial health summary: {} healthy, {} dead", healthy.len(), dead.len());
-
-    let global_opts = ReqOpt {
-        timeout_load: args.timeout_load,
-        t0: args.t0,
-        t1: args.t1,
-    };
 
     let make_svc = make_service_fn(|conn: &AddrStream| {
         let remote_addr = conn.remote_addr();

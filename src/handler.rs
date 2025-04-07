@@ -125,7 +125,7 @@ pub async fn handle_request_ha(
     }
 
     for server_url in selected_keys {
-        match send_request(unpacked_req.clone(), &server_url, opts.t0).await {
+        match send_request(unpacked_req.clone(), &server_url, opts.timeout).await {
             Ok(response) => {
                 info!("Chosen server {} to serve client {}", server_url, remote_addr);
                 let status = response.status();
@@ -184,7 +184,7 @@ pub async fn handle_chat_parallel(
         let url = server_url.clone();
         let servers = servers.clone();
         tokio::spawn(async move {
-            let health = sync_server(servers, url.to_owned(), opts.t0).await;
+            let health = sync_server(servers, url.to_owned(), opts.timeout).await;
             if health == crate::state::Health::Dead {
                 warn!("Server {} is dead", url);
                 return Err(Box::<dyn std::error::Error + Send + Sync>::from(

@@ -7,11 +7,11 @@ use std::pin::Pin;
 use tracing::{info, error};
 
 /// Runtime options for the backend request.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ReqOpt {
-    pub timeout_load: u32,
-    pub t0: u32,
-    pub t1: u32,
+    pub timeout: u32,
+    pub timeout_ft: u32,
+    pub time_measure: u32,
 }
 #[derive(Debug)]
 pub struct PerformanceInfo {
@@ -54,11 +54,11 @@ pub async fn send_request_monitored(
     let uri = format!("{}{}", backend_url, uri);
 
     let mut builder = Client::builder()
-        .connect_timeout(Duration::from_secs(1));
-    if opts.t0 == 0 {
+        .connect_timeout(Duration::from_secs(opts.timeout.into()));
+    if opts.timeout_ft == 0 {
         builder = builder.pool_idle_timeout(None);
     } else {
-        let timeout = Duration::from_secs(opts.t0.into());
+        let timeout = Duration::from_secs(opts.timeout_ft.into());
         builder = builder.read_timeout(timeout).pool_idle_timeout(timeout);
     }
     let client = builder.build().unwrap();
@@ -72,9 +72,6 @@ pub async fn send_request_monitored(
         request_builder = request_builder.body(whole_body);
     }
 
-    let begin_time = Instant::now();
-    let t0 = Duration::from_secs(opts.t0.into());
-    let t1 = Duration::from_secs(opts.t1.into());
     let response = match request_builder.send().await {
         Ok(resp) => resp,
         Err(e) => {
@@ -88,20 +85,23 @@ pub async fn send_request_monitored(
     let mut buffer = Vec::new();
     let mut bytes_count = 0;
     let mut ftt: Option<Instant> = None;
+    let t_measure = Duration::from_secs(opts.time_measure.into());
     loop {
         let res = stream.next().await;
-        let elapsed = begin_time.elapsed();
+        let now = Instant::now();
         match res {
             Some(Ok(chunk)) => {
                 buffer.extend_from_slice(&chunk);
-                if ftt.is_none() {
-                    ftt = Some(begin_time + elapsed);
-                }
-                if elapsed >= t1 {
-                    break;
-                }
-                if elapsed > t0 {
-                    bytes_count += chunk.len();
+                bytes_count += chunk.len();
+                match ftt {
+                    None => {
+                        ftt = Some(now);
+                    }
+                    Some(ftt) => {
+                        if now.duration_since(ftt) > t_measure {
+                            break;
+                        }
+                    },
                 }
             },
             Some(Err(e)) => {
@@ -111,12 +111,19 @@ pub async fn send_request_monitored(
             None => break,
         }
     }
-    info!("Backend {} received {} bytes in {} seconds", backend_url, bytes_count, t1.as_secs());
+    let ftt = match ftt {
+        None => {
+            return Err("No data received from backend".into());
+        },
+        Some(ftt) => ftt,
+    };
+
+    info!("Backend {} received {} bytes in {} seconds", backend_url, bytes_count, ftt.elapsed().as_secs_f32());
     let buf_stream = futures_util::stream::iter(vec![Ok(bytes::Bytes::from(buffer))]);
     stream = buf_stream.chain(stream).boxed();
     
     let perf = PerformanceInfo {
-        first_token_time: ftt.unwrap(),
+        first_token_time: ftt,
         duration_tokens: bytes_count,
     };
     let repacked = RepackedResponse {
