@@ -5,6 +5,7 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -25,7 +26,7 @@ jobs:
       run: sudo apt-get install -y libssl-dev
 
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --release
 
     - name: Run tests
       run: cargo test --verbose
