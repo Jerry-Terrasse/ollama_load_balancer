@@ -28,6 +28,8 @@ cargo build --release
 
 ## Usage
 
+### Specifying Backend Servers
+
 You can specify Ollama backend servers by cli arguments or by using a server file.
 
 For example:
@@ -40,8 +42,6 @@ ollama_load_balancer -l 0.0.0.0:11434 \
 ollama_load_balancer -l 0.0.0.0:11434 --server-file server_list.txt
 ```
 
-### Specifying Backend Servers
-
 Each server is specified in the format `http://<ip>:<port>=<name>`, where `<name>` is a human-readable identifier for the server.
 
 The `--server-file` option allows you to specify a file containing a list of servers, one per line:
@@ -51,7 +51,7 @@ http://192.168.1.100:11434=s0
 http://192.168.1.101:11434=s1
 ```
 
-### Other Options
+### Options
 
 | Option | Alias | Description | Default |
 |---|---|---|---|
