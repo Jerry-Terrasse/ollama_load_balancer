@@ -25,6 +25,14 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: sudo apt-get install -y libssl-dev
 
+    - name: Setup Rust
+      run: rustup toolchain install stable --profile minimal --no-self-update
+
+    - name: Setup Rust Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: "."
+
     - name: Build
       run: cargo build --verbose --release
 
@@ -50,3 +58,4 @@ jobs:
       with:
         files: $GITHUB_ENV.exec_path
         tag_name: Pre-release
+        prerelease: true
