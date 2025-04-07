@@ -35,6 +35,5 @@ jobs:
       run: ls -la ./target/release
     - name: Pre-Release
       uses: softprops/action-gh-release@v2
-      if: startsWith(github.ref, 'refs/tags/')
       with:
         files: ./target/release/ollama_load_balancer
