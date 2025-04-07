@@ -49,3 +49,4 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: $GITHUB_ENV.exec_path
+        tag_name: Pre-release
