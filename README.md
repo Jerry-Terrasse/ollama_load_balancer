@@ -96,7 +96,7 @@ These endpoints are specific to the load balancer and are not part of the standa
   - [x] Linux
   - [ ] MacOS
   - [ ] Windows
-- [ ] Fatest-Finish-First (F3) policy
+- [ ] Fastest-Finish-First (F3) policy
 - [ ] Try hacking some info into ollama cli for convenience
 - [ ] Support authentication
 
