@@ -12,7 +12,7 @@ use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 use clap::Parser;
 use ordermap::OrderMap;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber;
 use time::{self, macros::format_description};
 
@@ -48,8 +48,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(file) = &args.server_file {
         let contents = std::fs::read_to_string(file)?;
-        let configs: Vec<config::ServerConfig> = contents.lines().map(|line| line.parse().unwrap()).collect();
-        configs.iter().for_each(|s| { add_server(servers.clone(), s); });
+        contents.lines().for_each(|line| {
+            if line.is_empty() {
+                return;
+            }
+            let server: Result<config::ServerConfig, _> = line.parse();
+            match server {
+                Ok(s) => add_server(servers.clone(), &s),
+                Err(e) => warn!("Fail to parse server `{}`: {}", line, e),
+            }
+        });
     }
 
     let server_addrs = servers.lock().unwrap().keys().cloned().collect::<Vec<String>>();
