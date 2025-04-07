@@ -106,6 +106,8 @@ These endpoints are specific to the load balancer and are not part of the standa
 
 - feat: refactor timeout and performance mechanism, small requests are faster
 - chore: add own README version
+- chore: add TODO list
+- chore: add release workflow with GitHub actions
 
 ### 2.5
 

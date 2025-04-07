@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up dependencies for Ubuntu
+      if: matrix.os == 'ubuntu-latest'
+      run: sudo apt-get install -y libssl-dev
+
+    - name: Setup Rust
+      run: rustup toolchain install stable --profile minimal --no-self-update
+
+    - name: Setup Rust Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: "."
+
+    - name: Build
+      run: cargo build --verbose --release
+
+    - name: Run tests
+      run: cargo test --verbose
+    
+    - name: rename executable (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        mv -v ./target/release/ollama_load_balancer ./ollama_load_balancer_linux
+        echo "exec_path=./ollama_load_balancer_linux" >> $GITHUB_ENV
+    - name: rename executable (MacOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        mv -v ./target/release/ollama_load_balancer ./ollama_load_balancer_macos
+        echo "exec_path=./ollama_load_balancer_macos" >> $GITHUB_ENV
+    - name: rename executable (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        mv -v ./target/release/ollama_load_balancer.exe ./ollama_load_balancer_windows.exe
+        "exec_path=./ollama_load_balancer_windows.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ${{ env.exec_path }}
