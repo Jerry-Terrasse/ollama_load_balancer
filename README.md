@@ -4,10 +4,10 @@ An autonomous Rust utility that load balances multiple Ollama servers. It optimi
 
 ## Features
 
-- **Load Balancing:** Randomly delivers requests to different suitable backends.
-- **High Performance:** For chat requests, multiple parallel requests are sent to several backends selected based on their health value. The fastest response stream is returned to the user.
-- **Health Value System:** Each server is assigned a health value based on its performance. When a server wins in a request, successfully responds, or fails, its health value is updated accordingly.
-- **High Availability:** The load balancer won't fail if one or more servers are down. It utilizes multiple backends as redundant and only fails if all selected backends are down.
+- **Load Balancing:** Distributes requests randomly among suitable backend servers.
+- **High Performance:** For chat requests, parallel requests are sent to several backends chosen by their health scores, with the fastest response stream returned to the user.
+- **Health Value System:** Each server's health score dynamically increases on successful completion, decreases on error responses, and gets an extra boost for delivering the fastest response.
+- **High Availability:** The load balancer works fine even if one or more servers are down, leveraging redundant backends and only failing when all selected backends are unavailable.
 
 ## Installation
 
@@ -81,6 +81,20 @@ These endpoints are specific to the load balancer and are not part of the standa
 |`/status`|Returns the status of all servers in the load balancer. (not implemented yet)|
 |`/add_server`|Adds a new server to the load balancer. (not implemented yet)|
 |`/sync_servers`|Synchronizes the server list with the load balancer. (not implemented yet)|
+
+### TODO List
+
+- [ ] Use GitHub actions to build and release
+- [ ] Implement Ollama compatible endpoints
+  - [ ] `/api/ps`
+  - [ ] `/api/generate` (full support)
+- [ ] Implement more API
+  - [ ] `/status`
+  - [ ] `/add_server`
+  - [ ] `/sync_servers`
+- [ ] Fatest-Finish-First (F3) policy
+- [ ] Try hacking some info into ollama cli for convenience
+- [ ] Support authentication
 
 ## Release Notes
 
