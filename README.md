@@ -1,22 +1,15 @@
-# Ollama Load Balancer
+# 🚀 Ollama Load Balancer
 
 An autonomous Rust utility that load balances multiple Ollama servers. It optimizes response times and reliability by dispatching requests to the most suitable server in parallel, while maintaining a robust health-value system.
 
-## Features
+## 🌟 Features
 
-- **Load Balancing:** Distributes requests randomly among suitable backend servers.
-- **High Performance:** For chat requests, parallel requests are sent to several backends chosen by their health scores, with the fastest response stream returned to the user.
-- **Health Value System:** Each server's health score dynamically increases on successful completion, decreases on error responses, and gets an extra boost for delivering the fastest response.
-- **High Availability:** The load balancer works fine even if one or more servers are down, leveraging redundant backends and only failing when all selected backends are unavailable.
+- ⚖️ **Load Balancing:** Distributes requests randomly among suitable backend servers.
+- 🚀 **High Performance:** For chat requests, parallel requests are sent to several backends chosen by their health scores, with the fastest response stream returned to the user.
+- ❤️ **Health Value System:** Each server's health score dynamically increases on successful completion, decreases on error responses, and gets an extra boost for delivering the fastest response.
+- 🔄 **High Availability:** The load balancer works fine even if one or more servers are down, leveraging redundant backends and only failing when all selected backends are unavailable.
 
-## Installation
-
-<!-- ### Executable
-Download the latest release executable from GitHub.
-
-### Nix (MacOS, Linux)
-
-### Docker -->
+## 🛠️ Installation
 
 Supported platforms:
 
@@ -24,11 +17,11 @@ Supported platforms:
 - MacOS
 - Windows
 
-### Install from Binary
+### 📦 Install from Binary
 
 You can download the latest release binary from [here](https://github.com/Jerry-Terrasse/ollama_load_balancer/releases/latest).
 
-### Build from Source
+### 🔧 Build from Source
 
 ```shell
 git clone https://github.com/Jerry-Terrasse/ollama_load_balancer.git
@@ -36,9 +29,9 @@ cd ollama_load_balancer
 cargo build --release
 ```
 
-## Usage
+## 💡 Usage
 
-### Specifying Backend Servers
+### 🗄️ Specifying Backend Servers
 
 You can specify Ollama backend servers by cli arguments or by using a server file.
 
@@ -61,7 +54,7 @@ http://192.168.1.100:11434=s0
 http://192.168.1.101:11434=s1
 ```
 
-### Options
+### ⚙️ Options
 
 | Option | Alias | Description | Default |
 |---|---|---|---|
@@ -70,9 +63,9 @@ http://192.168.1.101:11434=s1
 |`--timeout-ft`| - |Maximum time in seconds to wait for a server to return the first token.|10|
 |`--time-measure`| - |Maximum time in seconds to wait for a server to return the last token.|2|
 
-## API Endpoints
+## 🌐 API Endpoints
 
-### Compatible with Ollama
+### 🦙 Compatible with Ollama
 
 | Endpoint | Description | Forward Type |
 |---|---|---|
@@ -82,7 +75,7 @@ http://192.168.1.101:11434=s1
 |`/api/generate`|(Partially supported) Returns `200 OK` to make `ollama` cli happy.|Not forwarded|
 |`/api/chat`|Returns the stream of the fastest server.|Parallelly forwarded|
 
-### Load Balancer Specific
+### 📌 Load Balancer Specific
 
 These endpoints are specific to the load balancer and are not part of the standard Ollama API.
 
@@ -92,7 +85,7 @@ These endpoints are specific to the load balancer and are not part of the standa
 |`/add_server`|Adds a new server to the load balancer. (not implemented yet)|
 |`/sync_servers`|Synchronizes the server list with the load balancer. (not implemented yet)|
 
-### TODO List
+### ✅ TODO List
 
 - [x] Use GitHub actions to build and release
 - [ ] Implement Ollama compatible endpoints
@@ -110,7 +103,7 @@ These endpoints are specific to the load balancer and are not part of the standa
 - [ ] Try hacking some info into ollama cli for convenience
 - [ ] Support authentication
 
-## Release Notes
+## 📝 Release Notes
 
 ### 2.6
 
@@ -225,6 +218,6 @@ https://github.com/BigBIueWhale/ollama_load_balancer/blob/RLS_01_00_00_2024_10_2
 
 </details>
 
-## License
+## 📄 License
 
 Distributed under the MIT License. See LICENSE for more information.
