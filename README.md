@@ -18,6 +18,16 @@ Download the latest release executable from GitHub.
 
 ### Docker -->
 
+Supported platforms:
+
+- Linux
+- MacOS
+- Windows
+
+### Install from Binary
+
+You can download the latest release binary from [here](https://github.com/Jerry-Terrasse/ollama_load_balancer/releases/latest).
+
 ### Build from Source
 
 ```shell
