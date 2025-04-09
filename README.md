@@ -105,6 +105,12 @@ These endpoints are specific to the load balancer and are not part of the standa
 
 ## 📝 Release Notes
 
+### 2.7 (WIP)
+
+- fix: skip empty lines when parsing server file
+- chore: make README more fancy
+- feat: support aarch64 architecture in GitHub actions
+
 ### 2.6
 
 - feat: refactor timeout and performance mechanism, small requests are faster
